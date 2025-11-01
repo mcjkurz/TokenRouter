@@ -1,6 +1,6 @@
 # TokenRouter
 
-TokenRouter is a lightweight proxy service that lets you share one paid LLM account with multiple teams or users. Each team gets their own API token and quota, and all usage is tracked automatically.
+TokenRouter is a lightweight proxy service that lets you share one paid LLM account with multiple teams or users. Each team gets their own API token and quota, and all usage is tracked automatically. It's perfect for classroom settings, teaching students how to work with LLMs and structured outputs via API access, without requiring them to purchase their own separate accounts.
 
 ## Getting Started
 
@@ -10,10 +10,11 @@ Install the dependencies:
 pip install -r requirements.txt
 ```
 
-Set your LLM provider's API key and start the server:
+Set your LLM provider's API key, configure admin password, and start the server:
 
 ```bash
 export PROVIDER_API_KEY='your-api-key-here'
+export ADMIN_PASSWORD='your-secure-password'
 ./start_foreground.sh
 ```
 
