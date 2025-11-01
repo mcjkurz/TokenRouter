@@ -1,4 +1,6 @@
 """Database connection and session management."""
+import os
+from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -27,5 +29,11 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_db() -> None:
     """Initialize database tables."""
+    # Ensure database directory exists for SQLite
+    if "sqlite" in settings.database_url:
+        db_path = settings.database_url.replace("sqlite:///", "")
+        db_dir = Path(db_path).parent
+        db_dir.mkdir(parents=True, exist_ok=True)
+    
     Base.metadata.create_all(bind=engine)
 
