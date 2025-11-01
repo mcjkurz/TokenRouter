@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TokenRouter Admin</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f7fa;
+            color: #2d3748;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            background: white;
+            padding: 1.5rem 2rem;
+            border-bottom: 2px solid #e2e8f0;
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        h1 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: #1a202c;
+        }
+
+        .subtitle {
+            color: #718096;
+            font-size: 0.95rem;
+            margin-top: 0.25rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border-left: 4px solid #4299e1;
+        }
+
+        .stat-card h3 {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #2d3748;
+            margin-top: 0.5rem;
+        }
+
+        .card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1a202c;
+        }
+
+        .btn {
+            padding: 0.6rem 1.25rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #4299e1;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #3182ce;
+        }
+
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #2d3748;
+        }
+
+        .btn-secondary:hover {
+            background: #cbd5e0;
+        }
+
+        .btn-danger {
+            background: #fc8181;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #f56565;
+        }
+
+        .btn-success {
+            background: #68d391;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #48bb78;
+        }
+
+        .btn-sm {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: #f7fafc;
+        }
+
+        th {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #4a5568;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        tbody tr:hover {
+            background: #f7fafc;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .badge-active {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .badge-inactive {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #4299e1;
+            transition: width 0.3s;
+        }
+
+        .progress-fill.high {
+            background: #f56565;
+        }
+
+        .progress-fill.medium {
+            background: #ed8936;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #1a202c;
+        }
+
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #4a5568;
+            font-size: 0.9rem;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 0.65rem;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #4299e1;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            margin-top: 1.5rem;
+        }
+
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #718096;
+        }
+
+        .error {
+            background: #fed7d7;
+            color: #742a2a;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+        }
+
+        .success {
+            background: #c6f6d5;
+            color: #22543d;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+        }
+
+        .token-display {
+            font-family: 'Courier New', monospace;
+            background: #f7fafc;
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" style="display: flex; align-items: center; justify-content: center; min-height: 100vh;">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h1 class="modal-title">TokenRouter Admin</h1>
+                <p class="subtitle">Please enter your admin password</p>
+            </div>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="adminPassword">Admin Password</label>
+                    <input type="password" id="adminPassword" required autofocus>
+                </div>
+                <div id="loginError" class="error" style="display: none;"></div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">Login</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main App (hidden until logged in) -->
+    <div id="mainApp" style="display: none;">
+        <header>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1>TokenRouter Admin</h1>
+                    <p class="subtitle">Manage teams, quotas, and monitor usage</p>
+                </div>
+                <button class="btn btn-secondary" onclick="logout()">Logout</button>
+            </div>
+        </header>
+
+        <div class="container">
+        <!-- Statistics -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <h3>Total Teams</h3>
+                <div class="value" id="totalTeams">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Active Teams</h3>
+                <div class="value" id="activeTeams">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Requests</h3>
+                <div class="value" id="totalRequests">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Tokens Used</h3>
+                <div class="value" id="tokensUsed">-</div>
+            </div>
+        </div>
+
+        <!-- Teams Table -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Teams</h2>
+                <button class="btn btn-primary" onclick="showCreateModal()">+ Add Team</button>
+            </div>
+            <div id="teamsTable">
+                <div class="loading">Loading teams...</div>
+            </div>
+        </div>
+        </div>
+    </div>
+
+    <!-- Create/Edit Team Modal -->
+    <div class="modal" id="teamModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalTitle">Add Team</h3>
+            </div>
+            <form id="teamForm">
+                <div class="form-group">
+                    <label for="teamName">Team Name</label>
+                    <input type="text" id="teamName" required>
+                </div>
+                <div class="form-group">
+                    <label for="quotaTokens">Token Quota</label>
+                    <input type="number" id="quotaTokens" min="1" required>
+                </div>
+                <div class="form-group" id="tokenGroup" style="display: none;">
+                    <label for="teamToken">API Token</label>
+                    <input type="text" id="teamToken" placeholder="Auto-generated if empty">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- View Logs Modal -->
+    <div class="modal" id="logsModal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 class="modal-title" id="logsModalTitle">Request Logs</h3>
+            </div>
+            <div id="logsContent">
+                <div class="loading">Loading logs...</div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeLogsModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentEditId = null;
+        let adminPassword = null;
+
+        // Check if already logged in
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedPassword = localStorage.getItem('adminPassword');
+            if (savedPassword) {
+                adminPassword = savedPassword;
+                checkAuth();
+            }
+        });
+
+        // Handle login form
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('adminPassword').value;
+            adminPassword = password;
+            
+            // Try to authenticate by making a test API call
+            try {
+                const response = await fetch('/admin/stats', {
+                    headers: {
+                        'X-Admin-Password': adminPassword
+                    }
+                });
+                
+                if (response.ok) {
+                    localStorage.setItem('adminPassword', adminPassword);
+                    showMainApp();
+                } else {
+                    document.getElementById('loginError').textContent = 'Invalid password';
+                    document.getElementById('loginError').style.display = 'block';
+                    adminPassword = null;
+                }
+            } catch (error) {
+                document.getElementById('loginError').textContent = 'Error connecting to server';
+                document.getElementById('loginError').style.display = 'block';
+                adminPassword = null;
+            }
+        });
+
+        async function checkAuth() {
+            try {
+                const response = await fetch('/admin/stats', {
+                    headers: {
+                        'X-Admin-Password': adminPassword
+                    }
+                });
+                
+                if (response.ok) {
+                    showMainApp();
+                } else {
+                    logout();
+                }
+            } catch (error) {
+                logout();
+            }
+        }
+
+        function showMainApp() {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('mainApp').style.display = 'block';
+            loadStats();
+            loadTeams();
+        }
+
+        function logout() {
+            adminPassword = null;
+            localStorage.removeItem('adminPassword');
+            document.getElementById('loginScreen').style.display = 'flex';
+            document.getElementById('mainApp').style.display = 'none';
+            document.getElementById('adminPassword').value = '';
+            document.getElementById('loginError').style.display = 'none';
+        }
+
+        // Helper function to add auth header to all requests
+        function getHeaders() {
+            return {
+                'X-Admin-Password': adminPassword
+            };
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/admin/stats', {
+                    headers: getHeaders()
+                });
+                const data = await response.json();
+                
+                document.getElementById('totalTeams').textContent = data.total_teams;
+                document.getElementById('activeTeams').textContent = data.active_teams;
+                document.getElementById('totalRequests').textContent = data.total_requests.toLocaleString();
+                document.getElementById('tokensUsed').textContent = data.total_tokens_used.toLocaleString();
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        async function loadTeams() {
+            try {
+                const response = await fetch('/admin/teams', {
+                    headers: getHeaders()
+                });
+                const teams = await response.json();
+                
+                if (teams.length === 0) {
+                    document.getElementById('teamsTable').innerHTML = '<p style="text-align: center; color: #718096; padding: 2rem;">No teams yet. Create your first team!</p>';
+                    return;
+                }
+
+                let html = '<table><thead><tr>';
+                html += '<th>Team Name</th>';
+                html += '<th>Token</th>';
+                html += '<th>Usage</th>';
+                html += '<th>Requests</th>';
+                html += '<th>Status</th>';
+                html += '<th>Actions</th>';
+                html += '</tr></thead><tbody>';
+
+                teams.forEach(team => {
+                    const progressClass = team.usage_percentage > 90 ? 'high' : team.usage_percentage > 70 ? 'medium' : '';
+                    html += '<tr>';
+                    html += `<td><strong>${team.name}</strong></td>`;
+                    html += `<td>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <div class="token-display" style="flex: 1;">${team.token.substring(0, 20)}...</div>
+                            <button class="btn btn-sm btn-secondary" onclick="copyToken('${team.token}', this)" title="Copy full token">📋</button>
+                        </div>
+                    </td>`;
+                    html += `<td>
+                        <div>${team.used_tokens.toLocaleString()} / ${team.quota_tokens.toLocaleString()} tokens</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill ${progressClass}" style="width: ${team.usage_percentage}%"></div>
+                        </div>
+                        <small style="color: #718096;">${team.usage_percentage}% used</small>
+                    </td>`;
+                    html += `<td>${team.total_requests.toLocaleString()}</td>`;
+                    html += `<td><span class="badge badge-${team.is_active ? 'active' : 'inactive'}">${team.is_active ? 'Active' : 'Inactive'}</span></td>`;
+                    html += `<td><div class="actions">
+                        <button class="btn btn-sm btn-secondary" onclick="editTeam(${team.id})">Edit</button>
+                        <button class="btn btn-sm btn-success" onclick="resetUsage(${team.id})">Reset</button>
+                        <button class="btn btn-sm btn-secondary" onclick="viewLogs(${team.id}, '${team.name}')">Logs</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteTeam(${team.id})">Delete</button>
+                    </div></td>`;
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+                document.getElementById('teamsTable').innerHTML = html;
+            } catch (error) {
+                console.error('Error loading teams:', error);
+                document.getElementById('teamsTable').innerHTML = '<div class="error">Failed to load teams</div>';
+            }
+        }
+
+        function showCreateModal() {
+            currentEditId = null;
+            document.getElementById('modalTitle').textContent = 'Add Team';
+            document.getElementById('teamForm').reset();
+            document.getElementById('tokenGroup').style.display = 'none';
+            document.getElementById('teamModal').classList.add('active');
+        }
+
+        async function editTeam(id) {
+            try {
+                const response = await fetch(`/admin/teams/${id}`, {
+                    headers: getHeaders()
+                });
+                const team = await response.json();
+                
+                currentEditId = id;
+                document.getElementById('modalTitle').textContent = 'Edit Team';
+                document.getElementById('teamName').value = team.name;
+                document.getElementById('quotaTokens').value = team.quota_tokens;
+                document.getElementById('tokenGroup').style.display = 'none';
+                document.getElementById('teamModal').classList.add('active');
+            } catch (error) {
+                alert('Error loading team: ' + error.message);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('teamModal').classList.remove('active');
+            currentEditId = null;
+        }
+
+        document.getElementById('teamForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('teamName').value;
+            const quotaTokens = parseInt(document.getElementById('quotaTokens').value);
+            const token = document.getElementById('teamToken').value;
+
+            try {
+                let response;
+                if (currentEditId) {
+                    response = await fetch(`/admin/teams/${currentEditId}`, {
+                        method: 'PUT',
+                        headers: {...getHeaders(), 'Content-Type': 'application/json'},
+                        body: JSON.stringify({name, quota_tokens: quotaTokens})
+                    });
+                } else {
+                    const body = {name, quota_tokens: quotaTokens};
+                    if (token) body.token = token;
+                    response = await fetch('/admin/teams', {
+                        method: 'POST',
+                        headers: {...getHeaders(), 'Content-Type': 'application/json'},
+                        body: JSON.stringify(body)
+                    });
+                }
+
+                if (response.ok) {
+                    closeModal();
+                    loadStats();
+                    loadTeams();
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + error.detail);
+                }
+            } catch (error) {
+                alert('Error saving team: ' + error.message);
+            }
+        });
+
+        async function deleteTeam(id) {
+            if (!confirm('Are you sure you want to delete this team? This will also delete all associated logs.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/admin/teams/${id}`, {
+                    method: 'DELETE',
+                    headers: getHeaders()
+                });
+                if (response.ok) {
+                    loadStats();
+                    loadTeams();
+                } else {
+                    alert('Error deleting team');
+                }
+            } catch (error) {
+                alert('Error deleting team: ' + error.message);
+            }
+        }
+
+        async function resetUsage(id) {
+            if (!confirm('Are you sure you want to reset this team\'s usage counter?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/admin/teams/${id}/reset`, {
+                    method: 'POST',
+                    headers: getHeaders()
+                });
+                if (response.ok) {
+                    loadStats();
+                    loadTeams();
+                } else {
+                    alert('Error resetting usage');
+                }
+            } catch (error) {
+                alert('Error resetting usage: ' + error.message);
+            }
+        }
+
+        async function viewLogs(teamId, teamName) {
+            document.getElementById('logsModalTitle').textContent = `Request Logs - ${teamName}`;
+            document.getElementById('logsModal').classList.add('active');
+            
+            try {
+                const response = await fetch(`/admin/teams/${teamId}/logs?limit=50`, {
+                    headers: getHeaders()
+                });
+                const logs = await response.json();
+                
+                if (logs.length === 0) {
+                    document.getElementById('logsContent').innerHTML = '<p style="text-align: center; color: #718096; padding: 2rem;">No logs yet</p>';
+                    return;
+                }
+
+                let html = '<table><thead><tr>';
+                html += '<th>Timestamp</th>';
+                html += '<th>Model</th>';
+                html += '<th>Tokens</th>';
+                html += '<th>Status</th>';
+                html += '</tr></thead><tbody>';
+
+                logs.forEach(log => {
+                    const date = new Date(log.timestamp);
+                    html += '<tr>';
+                    html += `<td><small>${date.toLocaleString()}</small></td>`;
+                    html += `<td>${log.model}</td>`;
+                    html += `<td><small>In: ${log.input_tokens} | Out: ${log.output_tokens} | Total: ${log.total_tokens}</small></td>`;
+                    html += `<td><span class="badge badge-${log.status === 'success' ? 'active' : 'inactive'}">${log.status}</span></td>`;
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+                document.getElementById('logsContent').innerHTML = html;
+            } catch (error) {
+                document.getElementById('logsContent').innerHTML = '<div class="error">Failed to load logs</div>';
+            }
+        }
+
+        function closeLogsModal() {
+            document.getElementById('logsModal').classList.remove('active');
+        }
+
+        function copyToken(token, button) {
+            navigator.clipboard.writeText(token).then(() => {
+                const originalText = button.textContent;
+                button.textContent = '✓';
+                button.style.background = '#68d391';
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.style.background = '';
+                }, 1500);
+            }).catch(err => {
+                alert('Failed to copy token. Full token: ' + token);
+            });
+        }
+    </script>
+</body>
+</html>
+
