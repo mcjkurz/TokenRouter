@@ -1,0 +1,19 @@
+INFO:     Will watch for changes in these directories: ['/Users/maciejkurzynski/Documents/Projects/TokenRouter']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [53527] using StatReload
+INFO:     Started server process [53538]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+
+✅ TokenRouter started successfully!
+📍 Proxy endpoint: http://0.0.0.0:8000/v1/chat/completions
+🔧 Admin interface: http://0.0.0.0:8000/admin
+📖 API docs: http://0.0.0.0:8000/docs
+
+INFO:     125.59.217.200:0 - "GET /admin HTTP/1.1" 200 OK
+INFO:     125.59.217.200:0 - "GET /admin/stats HTTP/1.1" 401 Unauthorized
+INFO:     125.59.217.200:0 - "GET /admin/stats HTTP/1.1" 401 Unauthorized
+INFO:     125.59.217.200:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     125.59.217.200:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     125.59.217.200:0 - "GET /admin/teams HTTP/1.1" 200 OK
+INFO:     125.59.217.200:0 - "GET /admin/teams/1/logs?limit=50 HTTP/1.1" 200 OK

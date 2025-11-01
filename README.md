@@ -4,46 +4,57 @@ TokenRouter is a lightweight proxy service that lets you share one paid LLM acco
 
 ## Getting Started
 
-First, install the dependencies:
+Install the dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Then start the server:
+Set your LLM provider's API key and start the server:
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+export PROVIDER_API_KEY='your-api-key-here'
+./start_foreground.sh
 ```
 
-On first run, you'll be prompted for your LLM provider's API key. The service will save it to a `.env` file for future use.
+**Helper Scripts:**
+- `./kill_ports.sh` - Kill any process using port 8000
+- `./start_foreground.sh` - Start server in foreground
+- `./start_background.sh` - Start server in background (logs to `tokenrouter.log`)
 
-**Important:** TokenRouter is designed to be accessed remotely by multiple users. You'll typically want to deploy it on a server and make it available through a domain name (e.g., `api.qhchina.org`) using a reverse proxy or tunnel service. This allows your teams to access the service from anywhere.
+**Configuration:**
 
-As the admin, you need to specify which models your provider supports in the `.env` file. For example, the default configuration includes:
+Set environment variables to customize TokenRouter:
 
 ```bash
-ALLOWED_MODELS=GPT-5-nano,GPT-5-mini,Gemini-2.5-flash,Gemini-2.5-pro
+export PROVIDER_API_KEY='your-provider-api-key'         # Required
+export PROVIDER_BASE_URL='https://api.poe.com/v1'       # Your LLM provider endpoint
+export ALLOWED_MODELS='GPT-5-nano,GPT-5-mini,...'       # Models available from your provider
+export ADMIN_PASSWORD='your-secure-password'            # Default: admin123
 ```
 
-Update this list to match the models available from your LLM provider.
+TokenRouter is designed to be accessed remotely via a domain name (e.g., `api.yourdomain.com`) using Cloudflare Tunnel or a reverse proxy.
 
 ## Admin Panel
 
-Open your browser to `https://api.qhchina.org/admin` (or your configured domain) to access the admin panel. You'll be prompted for the admin password (default is `admin123`, but you should change it via the `ADMIN_PASSWORD` environment variable).
+Access the admin panel at `https://api.yourdomain.com/admin` to:
+- Create teams and assign tokens
+- Set and manage quotas
+- Monitor usage and view request logs
+- Reset usage counters
 
-From the admin panel you can create teams, set quotas, monitor usage, view request logs, and reset usage counters. Only admins can edit or delete teams - users just use their assigned tokens.
+Default admin password is `admin123` (change via `ADMIN_PASSWORD` environment variable).
 
 ## For Users
 
-Users interact with TokenRouter exactly like the regular OpenAI API. Just provide them with their team token and they can use this code:
+Users interact with TokenRouter using the standard OpenAI API:
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(
     api_key="YOUR_TEAM_TOKEN",
-    base_url="https://api.qhchina.org/v1"
+    base_url="https://api.yourdomain.com/v1"
 )
 
 response = client.chat.completions.create(
@@ -54,23 +65,26 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
-That's it! The service automatically tracks their usage and enforces their quota. When they run out of tokens, requests will be rejected until you increase their quota or reset their usage counter.
+The service automatically tracks usage and enforces quotas.
 
-## Database
+## Cloudflare Setup
 
-TokenRouter uses SQLite to store teams and request logs. The database is created automatically when you first start the service. You can view or edit it using tools like [DB Browser for SQLite](https://sqlitebrowser.org/) if you need to make manual changes.
+If using Cloudflare Tunnel, configure a firewall rule to allow API traffic:
+
+1. Cloudflare Dashboard → **Security** → **Firewall Rules**
+2. Create rule:
+   - **Field**: Hostname equals `api.yourdomain.com`
+   - **Action**: Allow or Skip
 
 ## Troubleshooting
 
-If you get a "port already in use" error, run the service on a different port: `uvicorn app.main:app --port 8001`
-
-If users get "quota exceeded" errors, check the admin panel to see their usage and increase their quota or reset their counter.
-
-If requests aren't working, check that your provider API key is valid and that the model names match what your provider supports.
+- **Port already in use**: Run `./kill_ports.sh` or use a different port
+- **Quota exceeded**: Check usage in admin panel and increase quota or reset counter
+- **Invalid API key**: Verify `PROVIDER_API_KEY` is set correctly
 
 ## API Documentation
 
-For developers who want to integrate with TokenRouter programmatically, interactive API documentation is available at `https://api.qhchina.org/docs` (or your configured domain) when the service is running.
+Interactive API docs available at `https://api.yourdomain.com/docs` when the service is running.
 
 ---
 
