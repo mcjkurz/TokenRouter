@@ -30,3 +30,7 @@ build/
 *.swo
 .DS_Store
 
+# Logs
+*.log
+logs/
+
