@@ -94,12 +94,6 @@ If using Cloudflare Tunnel, configure a firewall rule to allow API traffic:
    - **Field**: Hostname equals `api.yourdomain.com`
    - **Action**: Allow or Skip
 
-## Troubleshooting
-
-- **Port already in use**: Run `./kill_ports.sh` or use a different port
-- **Quota exceeded**: Check usage in admin panel and increase quota or reset counter
-- **Invalid API key**: Verify `PROVIDER_API_KEY` is set correctly
-
 ## API Documentation
 
 Interactive API docs available at `https://api.yourdomain.com/docs` when the service is running.
