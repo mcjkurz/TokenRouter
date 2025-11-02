@@ -1,4 +1,6 @@
 """Usage tracking service."""
+import json
+from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.models.database import Team, RequestLog
 
@@ -10,10 +12,12 @@ def log_request(
     input_tokens: int,
     output_tokens: int,
     status: str,
-    error_message: str = None
+    error_message: str = None,
+    request_payload: Optional[Dict[str, Any]] = None,
+    response_payload: Optional[Dict[str, Any]] = None
 ) -> RequestLog:
     """
-    Log an API request.
+    Log an API request with full payload data.
     
     Args:
         db: Database session
@@ -23,11 +27,17 @@ def log_request(
         output_tokens: Number of output tokens
         status: Request status
         error_message: Error message if failed
+        request_payload: Full request data (messages, parameters)
+        response_payload: Full response data
     
     Returns:
         Created request log
     """
     total_tokens = input_tokens + output_tokens
+    
+    # Convert payloads to JSON strings
+    request_json = json.dumps(request_payload) if request_payload else None
+    response_json = json.dumps(response_payload) if response_payload else None
     
     log = RequestLog(
         team_id=team_id,
@@ -36,7 +46,9 @@ def log_request(
         output_tokens=output_tokens,
         total_tokens=total_tokens,
         status=status,
-        error_message=error_message
+        error_message=error_message,
+        request_payload=request_json,
+        response_payload=response_json
     )
     
     db.add(log)

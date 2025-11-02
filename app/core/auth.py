@@ -77,7 +77,7 @@ def check_quota(team: Team) -> None:
                 f"Token quota exceeded. "
                 f"Used: {team.used_tokens}/{team.quota_tokens} tokens. "
                 f"Remaining: 0 tokens. "
-                f"Check your usage at GET /v1/usage"
+                f"Check your usage at GET /v1/usage/{team.name}"
             )
         )
 

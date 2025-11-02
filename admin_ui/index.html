@@ -322,6 +322,78 @@
             font-size: 0.85rem;
             word-break: break-all;
         }
+
+        .log-details {
+            display: none;
+            background: #f7fafc;
+            padding: 1rem;
+            margin-top: 0.5rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+
+        .log-details.active {
+            display: block;
+        }
+
+        .log-payload {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin-bottom: 1rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .pagination button {
+            padding: 0.5rem 1rem;
+            background: #e2e8f0;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #cbd5e0;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination .page-info {
+            color: #4a5568;
+            font-weight: 500;
+        }
+
+        .btn-toggle {
+            background: #edf2f7;
+            color: #2d3748;
+            padding: 0.3rem 0.6rem;
+            font-size: 0.75rem;
+        }
+
+        .btn-toggle:hover {
+            background: #e2e8f0;
+        }
     </style>
 </head>
 <body>
@@ -392,8 +464,8 @@
     </div>
 
     <!-- Create/Edit Team Modal -->
-    <div class="modal" id="teamModal">
-        <div class="modal-content">
+    <div class="modal" id="teamModal" onclick="closeModalOnBackdrop(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <h3 class="modal-title" id="modalTitle">Add Team</h3>
             </div>
@@ -419,8 +491,8 @@
     </div>
 
     <!-- View Logs Modal -->
-    <div class="modal" id="logsModal">
-        <div class="modal-content" style="max-width: 800px;">
+    <div class="modal" id="logsModal" onclick="closeLogsModalOnBackdrop(event)">
+        <div class="modal-content" style="max-width: 1200px;" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <h3 class="modal-title" id="logsModalTitle">Request Logs</h3>
             </div>
@@ -436,6 +508,10 @@
     <script>
         let currentEditId = null;
         let adminPassword = null;
+        let currentLogTeamId = null;
+        let currentLogTeamName = null;
+        let currentLogPage = 0;
+        const LOGS_PER_PAGE = 50;
 
         // Check if already logged in
         document.addEventListener('DOMContentLoaded', () => {
@@ -620,6 +696,12 @@
             currentEditId = null;
         }
 
+        function closeModalOnBackdrop(event) {
+            if (event.target.id === 'teamModal') {
+                closeModal();
+            }
+        }
+
         document.getElementById('teamForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -701,46 +783,140 @@
         }
 
         async function viewLogs(teamId, teamName) {
-            document.getElementById('logsModalTitle').textContent = `Request Logs - ${teamName}`;
+            currentLogTeamId = teamId;
+            currentLogTeamName = teamName;
+            currentLogPage = 0;
             document.getElementById('logsModal').classList.add('active');
+            await loadLogsPage();
+        }
+
+        async function loadLogsPage() {
+            document.getElementById('logsModalTitle').textContent = `Request Logs - ${currentLogTeamName}`;
+            document.getElementById('logsContent').innerHTML = '<div class="loading">Loading logs...</div>';
             
             try {
-                const response = await fetch(`/admin/teams/${teamId}/logs?limit=50`, {
+                const skip = currentLogPage * LOGS_PER_PAGE;
+                const response = await fetch(`/admin/teams/${currentLogTeamId}/logs?skip=${skip}&limit=${LOGS_PER_PAGE}`, {
                     headers: getHeaders()
                 });
                 const logs = await response.json();
                 
-                if (logs.length === 0) {
+                if (logs.length === 0 && currentLogPage === 0) {
                     document.getElementById('logsContent').innerHTML = '<p style="text-align: center; color: #718096; padding: 2rem;">No logs yet</p>';
                     return;
                 }
 
-                let html = '<table><thead><tr>';
+                let html = '<table style="width: 100%;"><thead><tr>';
                 html += '<th>Timestamp</th>';
                 html += '<th>Model</th>';
                 html += '<th>Tokens</th>';
                 html += '<th>Status</th>';
+                html += '<th>Actions</th>';
                 html += '</tr></thead><tbody>';
 
-                logs.forEach(log => {
+                logs.forEach((log, index) => {
                     const date = new Date(log.timestamp);
+                    const logId = `log-${skip + index}`;
                     html += '<tr>';
                     html += `<td><small>${date.toLocaleString()}</small></td>`;
                     html += `<td>${log.model}</td>`;
                     html += `<td><small>In: ${log.input_tokens} | Out: ${log.output_tokens} | Total: ${log.total_tokens}</small></td>`;
                     html += `<td><span class="badge badge-${log.status === 'success' ? 'active' : 'inactive'}">${log.status}</span></td>`;
+                    html += `<td><button class="btn btn-sm btn-toggle" onclick="toggleLogDetails('${logId}')">Show Details</button></td>`;
                     html += '</tr>';
+                    
+                    // Details row (hidden by default)
+                    html += `<tr id="${logId}" class="log-details"><td colspan="5">`;
+                    
+                    // Request section
+                    html += '<h4 style="margin-bottom: 0.5rem; font-size: 0.9rem; color: #2d3748;">📤 Request</h4>';
+                    if (log.request_payload) {
+                        try {
+                            const requestData = JSON.parse(log.request_payload);
+                            html += '<div class="log-payload">' + formatPayload(requestData) + '</div>';
+                        } catch (e) {
+                            html += '<div class="log-payload">' + escapeHtml(log.request_payload) + '</div>';
+                        }
+                    } else {
+                        html += '<p style="color: #718096; font-style: italic;">No request data available</p>';
+                    }
+                    
+                    // Response section
+                    html += '<h4 style="margin-bottom: 0.5rem; margin-top: 1rem; font-size: 0.9rem; color: #2d3748;">📥 Response</h4>';
+                    if (log.response_payload) {
+                        try {
+                            const responseData = JSON.parse(log.response_payload);
+                            html += '<div class="log-payload">' + formatPayload(responseData) + '</div>';
+                        } catch (e) {
+                            html += '<div class="log-payload">' + escapeHtml(log.response_payload) + '</div>';
+                        }
+                    } else if (log.error_message) {
+                        html += `<p style="color: #f56565; background: #fed7d7; padding: 0.5rem; border-radius: 4px;"><strong>Error:</strong> ${escapeHtml(log.error_message)}</p>`;
+                    } else {
+                        html += '<p style="color: #718096; font-style: italic;">No response data available</p>';
+                    }
+                    
+                    html += '</td></tr>';
                 });
 
                 html += '</tbody></table>';
+                
+                // Add pagination controls
+                html += '<div class="pagination">';
+                html += `<button onclick="prevLogsPage()" ${currentLogPage === 0 ? 'disabled' : ''}>← Previous</button>`;
+                html += `<span class="page-info">Page ${currentLogPage + 1}</span>`;
+                html += `<button onclick="nextLogsPage()" ${logs.length < LOGS_PER_PAGE ? 'disabled' : ''}>Next →</button>`;
+                html += '</div>';
+                
                 document.getElementById('logsContent').innerHTML = html;
             } catch (error) {
                 document.getElementById('logsContent').innerHTML = '<div class="error">Failed to load logs</div>';
             }
         }
 
+        function toggleLogDetails(logId) {
+            const element = document.getElementById(logId);
+            const button = event.target;
+            
+            if (element.classList.contains('active')) {
+                element.classList.remove('active');
+                button.textContent = 'Show Details';
+            } else {
+                element.classList.add('active');
+                button.textContent = 'Hide Details';
+            }
+        }
+
+        function formatPayload(data) {
+            return escapeHtml(JSON.stringify(data, null, 2));
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function nextLogsPage() {
+            currentLogPage++;
+            await loadLogsPage();
+        }
+
+        async function prevLogsPage() {
+            if (currentLogPage > 0) {
+                currentLogPage--;
+                await loadLogsPage();
+            }
+        }
+
         function closeLogsModal() {
             document.getElementById('logsModal').classList.remove('active');
+        }
+
+        function closeLogsModalOnBackdrop(event) {
+            if (event.target.id === 'logsModal') {
+                closeLogsModal();
+            }
         }
 
         function copyToken(token, button) {

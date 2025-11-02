@@ -56,6 +56,8 @@ class RequestLogResponse(BaseModel):
     total_tokens: int
     status: str
     error_message: Optional[str]
+    request_payload: Optional[str]  # JSON string
+    response_payload: Optional[str]  # JSON string
     
     class Config:
         from_attributes = True

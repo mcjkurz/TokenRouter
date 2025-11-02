@@ -38,6 +38,8 @@ class RequestLog(Base):
     total_tokens = Column(Integer, default=0)
     status = Column(String(50), nullable=False)  # success, error, quota_exceeded
     error_message = Column(Text, nullable=True)
+    request_payload = Column(Text, nullable=True)  # JSON string of request (messages, params)
+    response_payload = Column(Text, nullable=True)  # JSON string of response
     
     # Relationship
     team = relationship("Team", back_populates="logs")

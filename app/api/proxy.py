@@ -23,16 +23,23 @@ async def list_models():
     return settings.allowed_models_list
 
 
-@router.get("/v1/usage")
+@router.get("/v1/usage/{username}")
 async def get_usage(
-    team: Team = Depends(validate_team_token),
+    username: str,
     db: Session = Depends(get_db)
 ):
     """
-    Get current usage and quota information for the authenticated team.
+    Get current usage and quota information for a team by username.
     
+    No authentication required. Returns empty response if team doesn't exist.
     This endpoint does not consume tokens - it's for checking your quota.
     """
+    # Look up team by name (case-insensitive)
+    team = db.query(Team).filter(Team.name.ilike(username)).first()
+    
+    if not team:
+        return {}
+    
     remaining = team.quota_tokens - team.used_tokens
     usage_percentage = (team.used_tokens / team.quota_tokens * 100) if team.quota_tokens > 0 else 0
     
@@ -76,7 +83,12 @@ async def chat_completions(
             f"Available models: {available_models}. "
             f"You can also list models at GET /v1/models"
         )
-        log_request(db, team.id, request.model, 0, 0, "error", error_msg)
+        # Log with request data
+        request_data = request.model_dump(exclude_none=True)
+        log_request(
+            db, team.id, request.model, 0, 0, "error", error_msg,
+            request_payload=request_data
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=error_msg
@@ -100,10 +112,12 @@ async def chat_completions(
         output_tokens = usage.get("completion_tokens", 0)
         total_tokens = usage.get("total_tokens", 0)
         
-        # Log successful request
+        # Log successful request with full payload data
         log_request(
             db, team.id, request.model,
-            input_tokens, output_tokens, "success"
+            input_tokens, output_tokens, "success",
+            request_payload=payload,
+            response_payload=response_data
         )
         
         # Update team usage
@@ -112,18 +126,22 @@ async def chat_completions(
         return response_data
     
     except HTTPException as e:
-        # Log failed request
+        # Log failed request with request data
+        request_data = request.model_dump(exclude_none=True)
         log_request(
             db, team.id, request.model, 0, 0, "error",
-            str(e.detail)
+            str(e.detail),
+            request_payload=request_data
         )
         raise
     
     except Exception as e:
-        # Log unexpected error
+        # Log unexpected error with request data
+        request_data = request.model_dump(exclude_none=True)
         log_request(
             db, team.id, request.model, 0, 0, "error",
-            str(e)
+            str(e),
+            request_payload=request_data
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

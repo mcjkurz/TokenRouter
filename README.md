@@ -82,8 +82,10 @@ curl https://api.yourdomain.com/v1/models
 
 **Check Your Quota:**
 ```bash
-curl -H "Authorization: Bearer YOUR_TEAM_TOKEN" https://api.yourdomain.com/v1/usage
+curl https://api.yourdomain.com/v1/usage/YOUR_TEAM_NAME
 ```
+
+Replace `YOUR_TEAM_NAME` with your team name (e.g., if your team is called "TeamAlpha", use `/v1/usage/TeamAlpha`). No authentication required.
 
 ## Cloudflare Setup
 
