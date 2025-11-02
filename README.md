@@ -10,10 +10,11 @@ Install the dependencies:
 pip install -r requirements.txt
 ```
 
-Set your LLM provider's API key, configure admin password, and start the server:
+Set required environment variables and start the server:
 
 ```bash
 export PROVIDER_API_KEY='your-api-key-here'
+export PROVIDER_BASE_URL='https://api.poe.com/v1'
 export ADMIN_PASSWORD='your-secure-password'
 ./start_foreground.sh
 ```
@@ -25,13 +26,19 @@ export ADMIN_PASSWORD='your-secure-password'
 
 **Configuration:**
 
-Set environment variables to customize TokenRouter:
+Set environment variables to configure TokenRouter:
 
 ```bash
-export PROVIDER_API_KEY='your-provider-api-key'         # Required
-export PROVIDER_BASE_URL='https://api.poe.com/v1'       # Your LLM provider endpoint
+# Required variables (app will not start without these)
+export PROVIDER_API_KEY='your-provider-api-key'
+export PROVIDER_BASE_URL='https://api.poe.com/v1'
+export ADMIN_PASSWORD='your-secure-password'
+
+# Optional variables
 export ALLOWED_MODELS='GPT-5-nano,GPT-5-mini,...'       # Models available from your provider
-export ADMIN_PASSWORD='your-secure-password'            # Default: admin123
+export DATABASE_URL='sqlite:///./data/tokenrouter.db'   # Database location
+export HOST='0.0.0.0'                                    # Server host
+export PORT='8000'                                       # Server port
 ```
 
 TokenRouter is designed to be accessed remotely via a domain name (e.g., `api.yourdomain.com`) using Cloudflare Tunnel or a reverse proxy.
@@ -44,7 +51,7 @@ Access the admin panel at `https://api.yourdomain.com/admin` to:
 - Monitor usage and view request logs
 - Reset usage counters
 
-Default admin password is `admin123` (change via `ADMIN_PASSWORD` environment variable).
+Admin password must be set via `ADMIN_PASSWORD` environment variable.
 
 ## For Users
 
@@ -67,6 +74,16 @@ print(response.choices[0].message.content)
 ```
 
 The service automatically tracks usage and enforces quotas.
+
+**Check Available Models:**
+```bash
+curl https://api.yourdomain.com/v1/models
+```
+
+**Check Your Quota:**
+```bash
+curl -H "Authorization: Bearer YOUR_TEAM_TOKEN" https://api.yourdomain.com/v1/usage
+```
 
 ## Cloudflare Setup
 

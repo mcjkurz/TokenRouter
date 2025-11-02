@@ -9,6 +9,7 @@ class TeamBase(BaseModel):
     """Base team schema."""
     name: str
     quota_tokens: int = Field(gt=0, description="Token quota for the team")
+    max_requests_per_minute: int = Field(default=30, gt=0, description="Rate limit per minute")
 
 
 class TeamCreate(TeamBase):
@@ -20,6 +21,7 @@ class TeamUpdate(BaseModel):
     """Schema for updating a team."""
     name: Optional[str] = None
     quota_tokens: Optional[int] = Field(None, gt=0)
+    max_requests_per_minute: Optional[int] = Field(None, gt=0)
     is_active: Optional[bool] = None
 
 

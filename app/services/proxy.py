@@ -12,7 +12,7 @@ class ProxyService:
     def __init__(self):
         self.base_url = settings.provider_base_url
         self.api_key = settings.provider_api_key
-        self.timeout = 120.0  # 2 minutes timeout
+        self.timeout = settings.provider_timeout
     
     async def forward_chat_completion(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """

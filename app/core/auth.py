@@ -1,10 +1,14 @@
 """Authentication and token validation."""
-from typing import Optional
+from typing import Optional, Dict, List
+from datetime import datetime, timedelta
 from fastapi import Header, HTTPException, status, Depends
 from sqlalchemy.orm import Session
 
 from app.models.database import Team
 from app.core.database import get_db
+
+# In-memory rate limiting tracker
+_rate_limit_tracker: Dict[int, List[datetime]] = {}
 
 
 def validate_team_token(
@@ -65,9 +69,49 @@ def check_quota(team: Team) -> None:
     Raises:
         HTTPException: If quota is exceeded
     """
+    remaining = team.quota_tokens - team.used_tokens
     if team.used_tokens >= team.quota_tokens:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Token quota exceeded. Used: {team.used_tokens}/{team.quota_tokens}"
+            detail=(
+                f"Token quota exceeded. "
+                f"Used: {team.used_tokens}/{team.quota_tokens} tokens. "
+                f"Remaining: 0 tokens. "
+                f"Check your usage at GET /v1/usage"
+            )
         )
+
+
+def check_rate_limit(team: Team) -> None:
+    """
+    Check if team is within rate limit.
+    
+    Args:
+        team: Team object
+    
+    Raises:
+        HTTPException: If rate limit is exceeded
+    """
+    now = datetime.utcnow()
+    one_minute_ago = now - timedelta(minutes=1)
+    
+    # Get or initialize request history for this team
+    if team.id not in _rate_limit_tracker:
+        _rate_limit_tracker[team.id] = []
+    
+    # Remove requests older than 1 minute
+    _rate_limit_tracker[team.id] = [
+        ts for ts in _rate_limit_tracker[team.id] if ts > one_minute_ago
+    ]
+    
+    # Check if limit exceeded
+    current_count = len(_rate_limit_tracker[team.id])
+    if current_count >= team.max_requests_per_minute:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Rate limit exceeded. Max {team.max_requests_per_minute} requests per minute. Try again in a few seconds."
+        )
+    
+    # Add current request
+    _rate_limit_tracker[team.id].append(now)
 

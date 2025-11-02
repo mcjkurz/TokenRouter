@@ -1,15 +1,15 @@
 """Main FastAPI application."""
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 import os
 
 from app.core.config import settings
 from app.core.database import init_db
 from app.api import proxy, admin
 
-# Initialize configuration and validate API key
-settings.validate_api_key()
+# Initialize configuration and validate required settings
+settings.validate_required_settings()
 
 # Create FastAPI app
 app = FastAPI(
@@ -40,18 +40,8 @@ async def startup_event():
 
 @app.get("/")
 async def root():
-    """Root endpoint."""
-    return {
-        "service": "TokenRouter",
-        "version": "1.0.0",
-        "status": "running",
-        "endpoints": {
-            "proxy": "/v1/chat/completions",
-            "admin_api": "/admin",
-            "admin_ui": "/admin",
-            "docs": "/docs"
-        }
-    }
+    """Root endpoint - minimal response."""
+    return {"status": "ok"}
 
 
 @app.get("/admin")
@@ -69,5 +59,26 @@ async def admin_ui():
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy"}
+    from sqlalchemy import text
+    from app.core.database import SessionLocal
+    
+    status = {"status": "healthy", "components": {}}
+    
+    # Check database
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        status["components"]["database"] = "ok"
+    except Exception as e:
+        status["status"] = "unhealthy"
+        status["components"]["database"] = f"error: {str(e)}"
+    
+    # Check provider config
+    if settings.provider_api_key:
+        status["components"]["provider_config"] = "ok"
+    else:
+        status["components"]["provider_config"] = "missing_api_key"
+    
+    return status
 

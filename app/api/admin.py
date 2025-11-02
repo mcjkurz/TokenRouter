@@ -148,6 +148,7 @@ def create_team(
         name=team_data.name,
         token=token,
         quota_tokens=team_data.quota_tokens,
+        max_requests_per_minute=team_data.max_requests_per_minute,
         used_tokens=0,
         is_active=True
     )
@@ -191,6 +192,9 @@ def update_team(
     
     if team_data.quota_tokens is not None:
         team.quota_tokens = team_data.quota_tokens
+    
+    if team_data.max_requests_per_minute is not None:
+        team.max_requests_per_minute = team_data.max_requests_per_minute
     
     if team_data.is_active is not None:
         team.is_active = team_data.is_active

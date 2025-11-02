@@ -15,6 +15,7 @@ class Team(Base):
     token = Column(String(255), unique=True, nullable=False, index=True)
     quota_tokens = Column(Integer, nullable=False)  # Total allowed tokens
     used_tokens = Column(Integer, default=0, nullable=False)  # Tokens used so far
+    max_requests_per_minute = Column(Integer, default=60, nullable=False)  # Rate limit
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

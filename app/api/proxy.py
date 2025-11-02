@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.auth import validate_team_token, check_quota
+from app.core.auth import validate_team_token, check_quota, check_rate_limit
 from app.core.config import settings
 from app.models.database import Team
 from app.models.schemas import ChatCompletionRequest, ChatCompletionResponse
@@ -11,6 +11,45 @@ from app.services.proxy import proxy_service
 from app.services.usage import log_request, update_team_usage
 
 router = APIRouter()
+
+
+@router.get("/v1/models")
+async def list_models():
+    """
+    List available models.
+    
+    Returns simple list of model names. No authentication required.
+    """
+    return settings.allowed_models_list
+
+
+@router.get("/v1/usage")
+async def get_usage(
+    team: Team = Depends(validate_team_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Get current usage and quota information for the authenticated team.
+    
+    This endpoint does not consume tokens - it's for checking your quota.
+    """
+    remaining = team.quota_tokens - team.used_tokens
+    usage_percentage = (team.used_tokens / team.quota_tokens * 100) if team.quota_tokens > 0 else 0
+    
+    # Get request count
+    from app.models.database import RequestLog
+    total_requests = db.query(RequestLog).filter(RequestLog.team_id == team.id).count()
+    
+    return {
+        "team_name": team.name,
+        "quota_tokens": team.quota_tokens,
+        "used_tokens": team.used_tokens,
+        "remaining_tokens": remaining,
+        "usage_percentage": round(usage_percentage, 2),
+        "total_requests": total_requests,
+        "max_requests_per_minute": team.max_requests_per_minute,
+        "is_active": team.is_active
+    }
 
 
 @router.post("/v1/chat/completions")
@@ -25,18 +64,22 @@ async def chat_completions(
     Validates team token, checks quota, forwards request to provider,
     and tracks usage.
     """
-    # Check quota before processing
+    # Check rate limit and quota before processing
+    check_rate_limit(team)
     check_quota(team)
     
     # Validate model
     if request.model not in settings.allowed_models_list:
-        log_request(
-            db, team.id, request.model, 0, 0, "error",
-            f"Model '{request.model}' not allowed. Allowed models: {', '.join(settings.allowed_models_list)}"
+        available_models = ', '.join(settings.allowed_models_list)
+        error_msg = (
+            f"Model '{request.model}' is not available. "
+            f"Available models: {available_models}. "
+            f"You can also list models at GET /v1/models"
         )
+        log_request(db, team.id, request.model, 0, 0, "error", error_msg)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Model '{request.model}' not allowed. Allowed models: {', '.join(settings.allowed_models_list)}"
+            detail=error_msg
         )
     
     # Streaming not supported in this simple implementation
