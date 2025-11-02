@@ -1,6 +1,6 @@
 # TokenRouter
 
-TokenRouter is a lightweight, educational proxy service that lets you share one LLM API account with multiple teams or users. Each team gets their own API token and quota, and all usage is tracked automatically. It's useful in classroom settings, when you teach students how to work with LLMs and structured outputs via Python API access, without requiring them to have their own subscriptions.
+TokenRouter is a lightweight, educational proxy service that lets you share one LLM API account with multiple teams or users. Each team gets their own API token and quota, and all usage is tracked automatically. It is useful in classroom settings, when you teach students how to work with LLMs and structured outputs via Python API access, without requiring them to have their own subscriptions.
 
 ## Getting Started
 
