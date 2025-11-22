@@ -56,10 +56,6 @@ TokenRouter supports self-service user registration. Users can create their own 
 - An email from an allowed domain (e.g., ln.hk, ln.edu.hk)
 - A registration access code
 
-**Setup:** See [REGISTRATION_SETUP.md](REGISTRATION_SETUP.md) for detailed configuration instructions.
-
-**For existing installations:** Run `python migrate_add_email.py` once to add email support to your database.
-
 ## Admin Panel
 
 Access the admin panel at `https://api.yourdomain.com/admin` to:
