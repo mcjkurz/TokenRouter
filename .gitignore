@@ -34,3 +34,6 @@ build/
 *.log
 logs/
 
+# Scripts with sensitive data
+restart.sh
+

@@ -75,18 +75,22 @@ async def chat_completions(
     check_rate_limit(team)
     check_quota(team)
     
-    # Validate model
-    if request.model not in settings.allowed_models_list:
+    # Lowercase model for case-insensitive comparison and storage
+    model_lower = request.model.lower()
+    
+    # Validate model (case-insensitive)
+    if not settings.is_model_allowed(request.model):
         available_models = ', '.join(settings.allowed_models_list)
         error_msg = (
             f"Model '{request.model}' is not available. "
             f"Available models: {available_models}. "
             f"You can also list models at GET /v1/models"
         )
-        # Log with request data
+        # Log with request data (using lowercase model)
         request_data = request.model_dump(exclude_none=True)
+        request_data["model"] = model_lower
         log_request(
-            db, team.id, request.model, 0, 0, "error", error_msg,
+            db, team.id, model_lower, 0, 0, "error", error_msg,
             request_payload=request_data
         )
         raise HTTPException(
@@ -104,6 +108,8 @@ async def chat_completions(
     try:
         # Forward request to provider
         payload = request.model_dump(exclude_none=True)
+        # Use lowercase model in payload for consistency
+        payload["model"] = model_lower
         response_data = await proxy_service.forward_chat_completion(payload)
         
         # Extract token usage from response
@@ -112,9 +118,9 @@ async def chat_completions(
         output_tokens = usage.get("completion_tokens", 0)
         total_tokens = usage.get("total_tokens", 0)
         
-        # Log successful request with full payload data
+        # Log successful request with full payload data (using lowercase model)
         log_request(
-            db, team.id, request.model,
+            db, team.id, model_lower,
             input_tokens, output_tokens, "success",
             request_payload=payload,
             response_payload=response_data
@@ -126,20 +132,22 @@ async def chat_completions(
         return response_data
     
     except HTTPException as e:
-        # Log failed request with request data
+        # Log failed request with request data (using lowercase model)
         request_data = request.model_dump(exclude_none=True)
+        request_data["model"] = model_lower
         log_request(
-            db, team.id, request.model, 0, 0, "error",
+            db, team.id, model_lower, 0, 0, "error",
             str(e.detail),
             request_payload=request_data
         )
         raise
     
     except Exception as e:
-        # Log unexpected error with request data
+        # Log unexpected error with request data (using lowercase model)
         request_data = request.model_dump(exclude_none=True)
+        request_data["model"] = model_lower
         log_request(
-            db, team.id, request.model, 0, 0, "error",
+            db, team.id, model_lower, 0, 0, "error",
             str(e),
             request_payload=request_data
         )

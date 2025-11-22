@@ -71,6 +71,7 @@ def list_teams(
         result.append(TeamStats(
             id=team.id,
             name=team.name,
+            email=team.email,
             token=team.token,
             quota_tokens=team.quota_tokens,
             used_tokens=team.used_tokens,
@@ -106,6 +107,7 @@ def get_team(
     return TeamStats(
         id=team.id,
         name=team.name,
+        email=team.email,
         token=team.token,
         quota_tokens=team.quota_tokens,
         used_tokens=team.used_tokens,
@@ -132,6 +134,15 @@ def create_team(
             detail=f"Team with name '{team_data.name}' already exists"
         )
     
+    # Check if email already exists (if email provided)
+    if team_data.email:
+        existing_email = db.query(Team).filter(Team.email == team_data.email.lower()).first()
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Team with email '{team_data.email}' already exists"
+            )
+    
     # Generate token if not provided
     token = team_data.token if team_data.token else generate_token()
     
@@ -146,6 +157,7 @@ def create_team(
     # Create team
     team = Team(
         name=team_data.name,
+        email=team_data.email.lower() if team_data.email else None,
         token=token,
         quota_tokens=team_data.quota_tokens,
         max_requests_per_minute=team_data.max_requests_per_minute,

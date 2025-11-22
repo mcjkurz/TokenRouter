@@ -622,6 +622,7 @@
 
                 let html = '<table><thead><tr>';
                 html += '<th>Team Name</th>';
+                html += '<th>Email</th>';
                 html += '<th>Token</th>';
                 html += '<th>Usage</th>';
                 html += '<th>Requests</th>';
@@ -633,6 +634,7 @@
                     const progressClass = team.usage_percentage > 90 ? 'high' : team.usage_percentage > 70 ? 'medium' : '';
                     html += '<tr>';
                     html += `<td><strong>${team.name}</strong></td>`;
+                    html += `<td><span style="color: #718096; font-size: 0.9rem;">${team.email || '-'}</span></td>`;
                     html += `<td>
                         <div style="display: flex; align-items: center; gap: 0.5rem;">
                             <div class="token-display" style="flex: 1;">${team.token.substring(0, 20)}...</div>

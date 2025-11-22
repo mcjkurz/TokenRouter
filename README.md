@@ -39,9 +39,26 @@ export ALLOWED_MODELS='GPT-5-nano,GPT-5-mini,...'       # Models available from 
 export DATABASE_URL='sqlite:///./data/tokenrouter.db'   # Database location
 export HOST='0.0.0.0'                                    # Server host
 export PORT='8000'                                       # Server port
+
+# Registration (optional - for self-service user registration)
+export REGISTRATION_ENABLED='true'                      # Enable user registration
+export REGISTRATION_ACCESS_CODE='your-secret-code'     # Required code for registration
+export ALLOWED_EMAIL_DOMAINS='ln.hk,ln.edu.hk'        # Allowed email domains
+export DEFAULT_REGISTRATION_QUOTA='500000'             # Default quota for new users
+export PUBLIC_API_URL='https://api.qhchina.org/v1'     # Public API URL shown to users
 ```
 
 TokenRouter is designed to be accessed remotely via a domain name (e.g., `api.yourdomain.com`) using Cloudflare Tunnel or a reverse proxy.
+
+## User Registration
+
+TokenRouter supports self-service user registration. Users can create their own accounts at `/register` if they have:
+- An email from an allowed domain (e.g., ln.hk, ln.edu.hk)
+- A registration access code
+
+**Setup:** See [REGISTRATION_SETUP.md](REGISTRATION_SETUP.md) for detailed configuration instructions.
+
+**For existing installations:** Run `python migrate_add_email.py` once to add email support to your database.
 
 ## Admin Panel
 

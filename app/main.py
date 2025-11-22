@@ -6,7 +6,7 @@ import os
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.api import proxy, admin
+from app.api import proxy, admin, registration
 
 # Initialize configuration and validate required settings
 settings.validate_required_settings()
@@ -15,12 +15,15 @@ settings.validate_required_settings()
 app = FastAPI(
     title="TokenRouter",
     description="Lightweight proxy service for sharing LLM accounts with token quotas",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/docs" if settings.enable_api_docs else None,  # Disable docs if configured
+    redoc_url="/redoc" if settings.enable_api_docs else None  # Disable redoc if configured
 )
 
 # Include routers
 app.include_router(proxy.router, tags=["proxy"])
-app.include_router(admin.router, tags=["admin"])
+app.include_router(admin.router, tags=["admin"], include_in_schema=False)  # Hide admin endpoints from docs
+app.include_router(registration.router, tags=["registration"])
 
 # Mount static files for admin UI
 admin_ui_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "admin_ui")
@@ -35,7 +38,10 @@ async def startup_event():
     print("\n✅ TokenRouter started successfully!")
     print(f"📍 Proxy endpoint: http://{settings.host}:{settings.port}/v1/chat/completions")
     print(f"🔧 Admin interface: http://{settings.host}:{settings.port}/admin")
-    print(f"📖 API docs: http://{settings.host}:{settings.port}/docs\n")
+    print(f"👤 Registration page: http://{settings.host}:{settings.port}/register")
+    if settings.enable_api_docs:
+        print(f"📖 API docs: http://{settings.host}:{settings.port}/docs")
+    print()
 
 
 @app.get("/")
@@ -53,6 +59,18 @@ async def admin_ui():
     return {
         "message": "Admin UI not found",
         "api_docs": "/docs"
+    }
+
+
+@app.get("/register")
+async def register_page():
+    """Serve registration UI."""
+    register_html = os.path.join(admin_ui_path, "register.html")
+    if os.path.exists(register_html):
+        return FileResponse(register_html)
+    return {
+        "message": "Registration UI not found",
+        "api_endpoint": "/register"
     }
 
 

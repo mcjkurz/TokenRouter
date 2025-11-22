@@ -22,7 +22,7 @@ def log_request(
     Args:
         db: Database session
         team_id: Team ID
-        model: Model name
+        model: Model name (will be lowercased for storage)
         input_tokens: Number of input tokens
         output_tokens: Number of output tokens
         status: Request status
@@ -35,13 +35,16 @@ def log_request(
     """
     total_tokens = input_tokens + output_tokens
     
+    # Lowercase model for consistent storage
+    model_lower = model.lower()
+    
     # Convert payloads to JSON strings
     request_json = json.dumps(request_payload) if request_payload else None
     response_json = json.dumps(response_payload) if response_payload else None
     
     log = RequestLog(
         team_id=team_id,
-        model=model,
+        model=model_lower,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,

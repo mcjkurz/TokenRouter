@@ -12,6 +12,7 @@ class Team(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, nullable=False, index=True)
+    email = Column(String(255), unique=True, nullable=True, index=True)  # Email address (optional for backward compatibility)
     token = Column(String(255), unique=True, nullable=False, index=True)
     quota_tokens = Column(Integer, nullable=False)  # Total allowed tokens
     used_tokens = Column(Integer, default=0, nullable=False)  # Tokens used so far

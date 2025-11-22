@@ -1,22 +1,29 @@
 INFO:     Will watch for changes in these directories: ['/Users/maciejkurzynski/Documents/Projects/TokenRouter']
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [56891] using StatReload
-INFO:     Started server process [56901]
+INFO:     Started reloader process [14332] using StatReload
+INFO:     Started server process [14345]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 
 ✅ TokenRouter started successfully!
 📍 Proxy endpoint: http://0.0.0.0:8000/v1/chat/completions
 🔧 Admin interface: http://0.0.0.0:8000/admin
-📖 API docs: http://0.0.0.0:8000/docs
+👤 Registration page: http://0.0.0.0:8000/register
 
-INFO:     125.59.217.200:0 - "GET / HTTP/1.1" 200 OK
-INFO:     125.59.217.200:0 - "GET /admin HTTP/1.1" 200 OK
-INFO:     125.59.217.200:0 - "GET /admin/stats HTTP/1.1" 200 OK
-INFO:     125.59.217.200:0 - "GET /admin/stats HTTP/1.1" 200 OK
-INFO:     125.59.217.200:0 - "GET /admin/teams HTTP/1.1" 200 OK
-INFO:     125.59.217.200:0 - "GET /admin/teams/1/logs?skip=0&limit=50 HTTP/1.1" 200 OK
-INFO:     34.48.119.36:0 - "GET /v1/usage/TeamABC HTTP/1.1" 200 OK
-INFO:     34.48.119.36:0 - "GET /v1/usage/TeamAB HTTP/1.1" 200 OK
-INFO:     34.48.119.36:0 - "GET /v1/usage/TeamABC HTTP/1.1" 200 OK
-INFO:     34.48.119.36:0 - "GET /v1/models HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/teams HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/teams/9/logs?skip=0&limit=50 HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "DELETE /admin/teams/9 HTTP/1.1" 204 No Content
+INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/teams HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /register HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "POST /register HTTP/1.1" 201 Created
+INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/teams HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/teams HTTP/1.1" 200 OK

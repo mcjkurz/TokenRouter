@@ -14,6 +14,7 @@ class TeamBase(BaseModel):
 
 class TeamCreate(TeamBase):
     """Schema for creating a team."""
+    email: Optional[str] = None  # Optional email address
     token: Optional[str] = None  # Auto-generate if not provided
 
 
@@ -28,6 +29,7 @@ class TeamUpdate(BaseModel):
 class TeamResponse(TeamBase):
     """Schema for team response."""
     id: int
+    email: Optional[str] = None
     token: str
     used_tokens: int
     is_active: bool
@@ -105,4 +107,24 @@ class AdminStats(BaseModel):
     total_requests: int
     total_tokens_used: int
     total_quota_tokens: int
+
+
+# Registration schemas
+class RegistrationRequest(BaseModel):
+    """Schema for user registration request."""
+    username: str = Field(..., min_length=3, max_length=50, description="Username for the account")
+    email: str = Field(..., description="Email address (must be from allowed domain)")
+    access_code: str = Field(..., description="Registration access code")
+
+
+class RegistrationResponse(BaseModel):
+    """Schema for successful registration response."""
+    message: str
+    username: str
+    email: str
+    api_key: str
+    api_base_url: Optional[str] = None
+    quota_tokens: int
+    warning: str
+    usage_example: Optional[str] = None
 
