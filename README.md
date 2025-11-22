@@ -20,6 +20,7 @@ export ADMIN_PASSWORD='your-secure-password'
 ```
 
 **Helper Scripts:**
+- `./check_status.sh` - Check if server is running and responding
 - `./kill_ports.sh` - Kill any process using port 8000
 - `./start_foreground.sh` - Start server in foreground
 - `./start_background.sh` - Start server in background (logs to `tokenrouter.log`)

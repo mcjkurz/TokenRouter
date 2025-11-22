@@ -27,3 +27,22 @@ INFO:     203.188.122.130:0 - "GET /admin HTTP/1.1" 200 OK
 INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
 INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
 INFO:     203.188.122.130:0 - "GET /admin/teams HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/teams HTTP/1.1" 200 OK
+INFO:     35.239.70.212:0 - "POST /v1/chat/completions HTTP/1.1" 401 Unauthorized
+INFO:     203.188.122.130:0 - "GET /admin HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/teams HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/teams/9 HTTP/1.1" 200 OK
+INFO:     35.239.70.212:0 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/stats HTTP/1.1" 200 OK
+INFO:     203.188.122.130:0 - "GET /admin/teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57156 - "GET /docs HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57158 - "GET /docs HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57160 - "GET /docs HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57164 - "GET /docs HTTP/1.1" 404 Not Found
