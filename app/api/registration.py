@@ -69,10 +69,9 @@ def register_user(
     
     # Validate email domain
     if not settings.is_email_domain_allowed(registration_data.email):
-        allowed_domains = ", ".join(settings.allowed_email_domains_list)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Email domain not allowed. Allowed domains: {allowed_domains}"
+            detail="Email domain not allowed"
         )
     
     # Check if username already exists
