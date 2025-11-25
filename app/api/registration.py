@@ -48,13 +48,13 @@ def register_user(
         )
     
     # Validate access code
-    if not settings.registration_access_code:
+    if not settings.registration_access_codes_list:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Registration access code not configured on server"
+            detail="Registration access codes not configured on server"
         )
     
-    if registration_data.access_code != settings.registration_access_code:
+    if not settings.is_registration_access_code_valid(registration_data.access_code):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid access code"

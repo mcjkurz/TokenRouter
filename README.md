@@ -43,10 +43,10 @@ export PORT='8000'                                       # Server port
 
 # Registration (optional - for self-service user registration)
 export REGISTRATION_ENABLED='true'                      # Enable user registration
-export REGISTRATION_ACCESS_CODE='your-secret-code'     # Required code for registration
-export ALLOWED_EMAIL_DOMAINS='ln.hk,ln.edu.hk'        # Allowed email domains
+export REGISTRATION_ACCESS_CODES='code1,code2,code3'  # Comma-separated list of valid registration codes
+export ALLOWED_EMAIL_DOMAINS='stanford.edu,gmail.com'        # Allowed email domains
 export DEFAULT_REGISTRATION_QUOTA='500000'             # Default quota for new users
-export PUBLIC_API_URL='https://api.qhchina.org/v1'     # Public API URL shown to users
+export PUBLIC_API_URL='https://api.yourdomain.com/v1'     # Public API URL shown to users
 ```
 
 TokenRouter is designed to be accessed remotely via a domain name (e.g., `api.yourdomain.com`) using Cloudflare Tunnel or a reverse proxy.
@@ -55,7 +55,7 @@ TokenRouter is designed to be accessed remotely via a domain name (e.g., `api.yo
 
 TokenRouter supports self-service user registration. Users can create their own accounts at `/register` if they have:
 - An email from an allowed domain (e.g., ln.hk, ln.edu.hk)
-- A registration access code
+- A valid registration access code (one of the codes configured in REGISTRATION_ACCESS_CODES)
 
 ## Admin Panel
 

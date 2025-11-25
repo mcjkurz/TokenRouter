@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     provider_base_url: str = Field(default=os.getenv("PROVIDER_BASE_URL", ""))
     provider_timeout: float = Field(default=float(os.getenv("PROVIDER_TIMEOUT", "120.0")))
     default_model: str = Field(default=os.getenv("DEFAULT_MODEL", "GPT-5-nano"))
-    allowed_models: str = Field(default=os.getenv("ALLOWED_MODELS", "GPT-5-nano,GPT-5-mini,GPT-5,Gemini-2.5-Flash,Gemini-2.5-Pro,Claude-Haiku-4.5,Claude-Sonnet-4.5"))
+    allowed_models: str = Field(default=os.getenv("ALLOWED_MODELS", "GPT-5.1,GPT-5.1-Instant,GPT-5-nano,GPT-5-mini,GPT-5,Gemini-2.5-Flash,Gemini-2.5-Pro,Claude-Haiku-4.5,Claude-Sonnet-4.5"))
     database_url: str = Field(default=os.getenv("DATABASE_URL", "sqlite:///./data/tokenrouter.db"))
     host: str = Field(default=os.getenv("HOST", "0.0.0.0"))
     port: int = Field(default=int(os.getenv("PORT", "8000")))
@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     
     # Registration settings
     registration_enabled: bool = Field(default=os.getenv("REGISTRATION_ENABLED", "true").lower() == "true")
-    registration_access_code: str = Field(default=os.getenv("REGISTRATION_ACCESS_CODE", ""))
+    registration_access_codes: str = Field(default=os.getenv("REGISTRATION_ACCESS_CODES", ""))
     allowed_email_domains: str = Field(default=os.getenv("ALLOWED_EMAIL_DOMAINS", "ln.hk,ln.edu.hk"))
     default_registration_quota: int = Field(default=int(os.getenv("DEFAULT_REGISTRATION_QUOTA", "500000")))
     public_api_url: str = Field(default=os.getenv("PUBLIC_API_URL", ""))
@@ -58,6 +58,15 @@ class Settings(BaseSettings):
         """Check if an email domain is allowed."""
         email_lower = email.lower()
         return any(email_lower.endswith(f"@{domain}") for domain in self.allowed_email_domains_list)
+    
+    @property
+    def registration_access_codes_list(self) -> List[str]:
+        """Parse registration access codes from comma-separated string."""
+        return [c.strip() for c in self.registration_access_codes.split(",") if c.strip()]
+    
+    def is_registration_access_code_valid(self, access_code: str) -> bool:
+        """Check if a registration access code is valid."""
+        return access_code in self.registration_access_codes_list
     
     def validate_required_settings(self) -> None:
         """Check if all required settings are provided."""
