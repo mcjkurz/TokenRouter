@@ -237,11 +237,11 @@
         <form id="registrationForm">
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" required minlength="3" maxlength="50" 
-                       pattern="^[a-zA-Z][a-zA-Z0-9_]*$" 
+                <input type="text" id="username" name="username" required minlength="5" maxlength="50" 
+                       pattern="^[a-zA-Z0-9_]+$" 
                        autocomplete="username"
-                       title="Username must start with a letter and contain only letters, numbers, and underscores">
-                <div class="hint">3-50 characters, alphanumeric only (letters, numbers, underscores), must start with a letter</div>
+                       title="Username must contain only letters, numbers, and underscores">
+                <div class="hint">5-50 characters (letters, numbers, underscores)</div>
             </div>
             
             <div class="form-group">
@@ -328,8 +328,8 @@
                 return { valid: false, message: 'Username cannot contain spaces' };
             }
             // Check alphanumeric with underscores
-            if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(username)) {
-                return { valid: false, message: 'Username must start with a letter and contain only letters, numbers, and underscores' };
+            if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+                return { valid: false, message: 'Username must contain only letters, numbers, and underscores' };
             }
             return { valid: true, message: '' };
         }
@@ -379,8 +379,8 @@
                 return;
             }
             
-            if (username.length < 3 || username.length > 50) {
-                errorBox.textContent = 'Username must be between 3 and 50 characters';
+            if (username.length < 5 || username.length > 50) {
+                errorBox.textContent = 'Username must be between 5 and 50 characters';
                 errorBox.style.display = 'block';
                 return;
             }

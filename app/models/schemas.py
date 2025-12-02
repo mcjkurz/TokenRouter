@@ -113,14 +113,14 @@ class AdminStats(BaseModel):
 # Registration schemas
 class RegistrationRequest(BaseModel):
     """Schema for user registration request."""
-    username: str = Field(..., min_length=3, max_length=50, description="Username for the account (alphanumeric only)")
+    username: str = Field(..., min_length=5, max_length=50, description="Username for the account (letters, numbers, underscores)")
     email: str = Field(..., description="Email address (must be from allowed domain)")
     access_code: str = Field(..., description="Registration access code")
     
     @field_validator('username')
     @classmethod
     def validate_username(cls, v: str) -> str:
-        """Validate that username is alphanumeric with no spaces."""
+        """Validate that username contains only letters, numbers, and underscores."""
         # Strip whitespace
         v = v.strip()
         
@@ -128,13 +128,9 @@ class RegistrationRequest(BaseModel):
         if ' ' in v:
             raise ValueError('Username cannot contain spaces')
         
-        # Check alphanumeric (allows underscores as well for flexibility)
+        # Check alphanumeric (allows underscores)
         if not re.match(r'^[a-zA-Z0-9_]+$', v):
-            raise ValueError('Username must be alphanumeric (letters, numbers, and underscores only)')
-        
-        # Check that it doesn't start with a number or underscore
-        if v[0].isdigit() or v[0] == '_':
-            raise ValueError('Username must start with a letter')
+            raise ValueError('Username must contain only letters, numbers, and underscores')
         
         return v
     
