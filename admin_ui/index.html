@@ -446,10 +446,9 @@
             border-radius: 6px;
             font-family: 'Courier New', monospace;
             font-size: 0.85rem;
-            white-space: pre-wrap;
-            word-break: break-word;
+            white-space: pre;
             max-height: 70vh;
-            overflow-y: auto;
+            overflow: auto;
             line-height: 1.5;
         }
 
@@ -461,6 +460,78 @@
             text-align: center;
             padding: 2rem;
             color: #718096;
+        }
+
+        /* Tabs */
+        .tabs-container {
+            margin-bottom: 0;
+        }
+
+        .tabs-header {
+            display: flex;
+            border-bottom: 2px solid #e2e8f0;
+            margin-bottom: 0;
+            background: white;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .tab-btn {
+            padding: 1rem 1.5rem;
+            background: transparent;
+            border: none;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            color: #718096;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            color: #4299e1;
+            background: #f7fafc;
+        }
+
+        .tab-btn.active {
+            color: #4299e1;
+            border-bottom-color: #4299e1;
+            background: white;
+        }
+
+        .tab-content {
+            display: none;
+            background: white;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .tab-inner {
+            padding: 1.5rem;
+        }
+
+        .tab-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .tab-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1a202c;
+        }
+
+        /* Full-height log list for server logs tab */
+        .server-logs-tab .log-list {
+            max-height: 500px;
         }
     </style>
 </head>
@@ -501,11 +572,11 @@
         <!-- Statistics -->
         <div class="stats-grid" id="statsGrid">
             <div class="stat-card">
-                <h3>Total Teams</h3>
+                <h3>Total Accounts</h3>
                 <div class="value" id="totalTeams">-</div>
             </div>
             <div class="stat-card">
-                <h3>Active Teams</h3>
+                <h3>Active Accounts</h3>
                 <div class="value" id="activeTeams">-</div>
             </div>
             <div class="stat-card">
@@ -518,39 +589,51 @@
             </div>
         </div>
 
-        <!-- Teams Table -->
-        <div class="card">
-            <div class="card-header">
-                <h2 class="card-title">Teams</h2>
-                <button class="btn btn-primary" onclick="showCreateModal()">+ Add Team</button>
+        <!-- Tabs -->
+        <div class="tabs-container">
+            <div class="tabs-header">
+                <button class="tab-btn active" onclick="switchTab('accounts')" id="tab-btn-accounts">Accounts</button>
+                <button class="tab-btn" onclick="switchTab('server-logs')" id="tab-btn-server-logs">Server Logs</button>
             </div>
-            <div id="teamsTable">
-                <div class="loading">Loading teams...</div>
-            </div>
-        </div>
 
-        <!-- Server Logs -->
-        <div class="card">
-            <div class="card-header">
-                <h2 class="card-title">Server Logs</h2>
-                <button class="btn btn-secondary" onclick="loadServerLogs()">↻ Refresh</button>
+            <!-- Accounts Tab -->
+            <div class="tab-content active" id="tab-accounts">
+                <div class="tab-inner">
+                    <div class="tab-header">
+                        <h2 class="tab-title">Accounts</h2>
+                        <button class="btn btn-primary" onclick="showCreateModal()">+ Add Account</button>
+                    </div>
+                    <div id="teamsTable">
+                        <div class="loading">Loading accounts...</div>
+                    </div>
+                </div>
             </div>
-            <div id="serverLogsContainer">
-                <div class="loading">Loading server logs...</div>
+
+            <!-- Server Logs Tab -->
+            <div class="tab-content server-logs-tab" id="tab-server-logs">
+                <div class="tab-inner">
+                    <div class="tab-header">
+                        <h2 class="tab-title">Server Logs</h2>
+                        <button class="btn btn-secondary" onclick="loadServerLogs()">↻ Refresh</button>
+                    </div>
+                    <div id="serverLogsContainer">
+                        <div class="loading">Loading server logs...</div>
+                    </div>
+                </div>
             </div>
         </div>
         </div>
     </div>
 
-    <!-- Create/Edit Team Modal -->
+    <!-- Create/Edit Account Modal -->
     <div class="modal" id="teamModal" onclick="closeModalOnBackdrop(event)">
         <div class="modal-content" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <h3 class="modal-title" id="modalTitle">Add Team</h3>
+                <h3 class="modal-title" id="modalTitle">Add Account</h3>
             </div>
             <form id="teamForm">
                 <div class="form-group">
-                    <label for="teamName">Team Name</label>
+                    <label for="teamName">Account Name</label>
                     <input type="text" id="teamName" required>
                 </div>
                 <div class="form-group">
@@ -711,12 +794,12 @@
                 const teams = await response.json();
                 
                 if (teams.length === 0) {
-                    document.getElementById('teamsTable').innerHTML = '<p style="text-align: center; color: #718096; padding: 2rem;">No teams yet. Create your first team!</p>';
+                    document.getElementById('teamsTable').innerHTML = '<p style="text-align: center; color: #718096; padding: 2rem;">No accounts yet. Create your first account!</p>';
                     return;
                 }
 
                 let html = '<table><thead><tr>';
-                html += '<th>Team Name</th>';
+                html += '<th>Account Name</th>';
                 html += '<th>Email</th>';
                 html += '<th>Token</th>';
                 html += '<th>Usage</th>';
@@ -764,7 +847,7 @@
 
         function showCreateModal() {
             currentEditId = null;
-            document.getElementById('modalTitle').textContent = 'Add Team';
+            document.getElementById('modalTitle').textContent = 'Add Account';
             document.getElementById('teamForm').reset();
             document.getElementById('tokenGroup').style.display = 'none';
             document.getElementById('teamModal').classList.add('active');
@@ -778,13 +861,13 @@
                 const team = await response.json();
                 
                 currentEditId = id;
-                document.getElementById('modalTitle').textContent = 'Edit Team';
+                document.getElementById('modalTitle').textContent = 'Edit Account';
                 document.getElementById('teamName').value = team.name;
                 document.getElementById('quotaTokens').value = team.quota_tokens;
                 document.getElementById('tokenGroup').style.display = 'none';
                 document.getElementById('teamModal').classList.add('active');
             } catch (error) {
-                alert('Error loading team: ' + error.message);
+                alert('Error loading account: ' + error.message);
             }
         }
 
@@ -838,7 +921,7 @@
         });
 
         async function deleteTeam(id) {
-            if (!confirm('Are you sure you want to delete this team? This will also delete all associated logs.')) {
+            if (!confirm('Are you sure you want to delete this account? This will also delete all associated logs.')) {
                 return;
             }
 
@@ -851,15 +934,15 @@
                     loadStats();
                     loadTeams();
                 } else {
-                    alert('Error deleting team');
+                    alert('Error deleting account');
                 }
             } catch (error) {
-                alert('Error deleting team: ' + error.message);
+                alert('Error deleting account: ' + error.message);
             }
         }
 
         async function resetUsage(id) {
-            if (!confirm('Are you sure you want to reset this team\'s usage counter?')) {
+            if (!confirm('Are you sure you want to reset this account\'s usage counter?')) {
                 return;
             }
 
@@ -1117,6 +1200,26 @@
         function closeServerLogModalOnBackdrop(event) {
             if (event.target.id === 'serverLogModal') {
                 closeServerLogModal();
+            }
+        }
+
+        // Tab switching
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById('tab-' + tabName).classList.add('active');
+            document.getElementById('tab-btn-' + tabName).classList.add('active');
+            
+            // Load data if needed
+            if (tabName === 'server-logs') {
+                loadServerLogs();
             }
         }
     </script>
