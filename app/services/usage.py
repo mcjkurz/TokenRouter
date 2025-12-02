@@ -1,5 +1,6 @@
 """Usage tracking service."""
 import json
+from datetime import datetime
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.models.database import Team, RequestLog
@@ -42,8 +43,12 @@ def log_request(
     request_json = json.dumps(request_payload) if request_payload else None
     response_json = json.dumps(response_payload) if response_payload else None
     
+    # Use local time for timestamp (not UTC)
+    local_now = datetime.now()
+    
     log = RequestLog(
         team_id=team_id,
+        timestamp=local_now,  # Explicitly set local time
         model=model_lower,
         input_tokens=input_tokens,
         output_tokens=output_tokens,

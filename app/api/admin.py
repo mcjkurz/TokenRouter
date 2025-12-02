@@ -1,6 +1,7 @@
 """Admin API endpoints for team management."""
 import os
 import secrets
+from datetime import datetime
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
 from fastapi.responses import PlainTextResponse
@@ -160,7 +161,7 @@ def create_team(
             detail="Token already exists"
         )
     
-    # Create team
+    # Create team with local time for created_at
     team = Team(
         name=team_data.name,
         email=team_data.email.lower() if team_data.email else None,
@@ -168,7 +169,8 @@ def create_team(
         quota_tokens=team_data.quota_tokens,
         max_requests_per_minute=team_data.max_requests_per_minute,
         used_tokens=0,
-        is_active=True
+        is_active=True,
+        created_at=datetime.now()  # Use local time
     )
     
     db.add(team)

@@ -1,6 +1,7 @@
 """User registration API endpoints."""
 import secrets
 import re
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -99,7 +100,7 @@ def register_user(
         # Generate a new one if collision (extremely rare)
         api_key = generate_token()
     
-    # Create the team/account
+    # Create the team/account with local time for created_at
     team = Team(
         name=registration_data.username,
         email=registration_data.email.lower(),  # Store email in lowercase for consistency
@@ -107,7 +108,8 @@ def register_user(
         quota_tokens=settings.default_registration_quota,
         max_requests_per_minute=60,  # Default rate limit
         used_tokens=0,
-        is_active=True
+        is_active=True,
+        created_at=datetime.now()  # Use local time
     )
     
     db.add(team)

@@ -1,12 +1,17 @@
 """Main FastAPI application."""
+import logging
+import os
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
-import os
 
 from app.core.config import settings
 from app.core.database import init_db
 from app.api import proxy, admin, registration
+
+# Get logger
+logger = logging.getLogger("uvicorn.error")
 
 # Initialize configuration and validate required settings
 settings.validate_required_settings()
@@ -35,13 +40,12 @@ if os.path.exists(admin_ui_path):
 async def startup_event():
     """Initialize database on startup."""
     init_db()
-    print("\n✅ TokenRouter started successfully!")
-    print(f"📍 Proxy endpoint: http://{settings.host}:{settings.port}/v1/chat/completions")
-    print(f"🔧 Admin interface: http://{settings.host}:{settings.port}/admin")
-    print(f"👤 Registration page: http://{settings.host}:{settings.port}/register")
+    logger.info("✅ TokenRouter started successfully!")
+    logger.info(f"📍 Proxy endpoint: http://{settings.host}:{settings.port}/v1/chat/completions")
+    logger.info(f"🔧 Admin interface: http://{settings.host}:{settings.port}/admin")
+    logger.info(f"👤 Registration page: http://{settings.host}:{settings.port}/register")
     if settings.enable_api_docs:
-        print(f"📖 API docs: http://{settings.host}:{settings.port}/docs")
-    print()
+        logger.info(f"📖 API docs: http://{settings.host}:{settings.port}/docs")
 
 
 @app.get("/")
