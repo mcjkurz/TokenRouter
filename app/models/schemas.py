@@ -1,7 +1,8 @@
 """Pydantic schemas for request/response validation."""
 from datetime import datetime
 from typing import Optional, List, Any, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+import re
 
 
 # Team schemas
@@ -112,9 +113,49 @@ class AdminStats(BaseModel):
 # Registration schemas
 class RegistrationRequest(BaseModel):
     """Schema for user registration request."""
-    username: str = Field(..., min_length=3, max_length=50, description="Username for the account")
+    username: str = Field(..., min_length=3, max_length=50, description="Username for the account (alphanumeric only)")
     email: str = Field(..., description="Email address (must be from allowed domain)")
     access_code: str = Field(..., description="Registration access code")
+    
+    @field_validator('username')
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        """Validate that username is alphanumeric with no spaces."""
+        # Strip whitespace
+        v = v.strip()
+        
+        # Check for spaces
+        if ' ' in v:
+            raise ValueError('Username cannot contain spaces')
+        
+        # Check alphanumeric (allows underscores as well for flexibility)
+        if not re.match(r'^[a-zA-Z0-9_]+$', v):
+            raise ValueError('Username must be alphanumeric (letters, numbers, and underscores only)')
+        
+        # Check that it doesn't start with a number or underscore
+        if v[0].isdigit() or v[0] == '_':
+            raise ValueError('Username must start with a letter')
+        
+        return v
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email_format(cls, v: str) -> str:
+        """Basic email validation and sanitization."""
+        v = v.strip().lower()
+        
+        # Basic format check (more thorough validation happens in the API)
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+            raise ValueError('Invalid email format')
+        
+        return v
+    
+    @field_validator('access_code')
+    @classmethod
+    def validate_access_code(cls, v: str) -> str:
+        """Sanitize access code."""
+        # Strip whitespace but don't modify the code itself
+        return v.strip()
 
 
 class RegistrationResponse(BaseModel):

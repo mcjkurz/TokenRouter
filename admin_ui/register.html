@@ -237,19 +237,22 @@
         <form id="registrationForm">
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" required minlength="3" maxlength="50">
-                <div class="hint">3-50 characters</div>
+                <input type="text" id="username" name="username" required minlength="3" maxlength="50" 
+                       pattern="^[a-zA-Z][a-zA-Z0-9_]*$" 
+                       autocomplete="username"
+                       title="Username must start with a letter and contain only letters, numbers, and underscores">
+                <div class="hint">3-50 characters, alphanumeric only (letters, numbers, underscores), must start with a letter</div>
             </div>
             
             <div class="form-group">
                 <label for="email">Email Address</label>
-                <input type="email" id="email" name="email" required>
+                <input type="email" id="email" name="email" required autocomplete="email">
                 <div class="hint">Allowed domains are specified by the administrator</div>
             </div>
             
             <div class="form-group">
                 <label for="accessCode">Access Code</label>
-                <input type="password" id="accessCode" name="accessCode" required>
+                <input type="password" id="accessCode" name="accessCode" required autocomplete="off">
                 <div class="hint">Registration code provided by your administrator</div>
             </div>
             
@@ -295,16 +298,92 @@
         const successModal = document.getElementById('successModal');
         let currentApiKey = '';
         
+        /**
+         * Sanitize a string to prevent XSS attacks when inserting into HTML.
+         * Uses textContent which is safe, but this provides an extra layer.
+         */
+        function sanitizeHTML(str) {
+            if (typeof str !== 'string') return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+        
+        /**
+         * Safely set text content of an element (already safe, but explicit).
+         */
+        function safeSetText(elementId, text) {
+            const el = document.getElementById(elementId);
+            if (el) {
+                el.textContent = String(text);
+            }
+        }
+        
+        /**
+         * Validate username on the client side.
+         */
+        function validateUsername(username) {
+            // Check for spaces
+            if (/\s/.test(username)) {
+                return { valid: false, message: 'Username cannot contain spaces' };
+            }
+            // Check alphanumeric with underscores
+            if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(username)) {
+                return { valid: false, message: 'Username must start with a letter and contain only letters, numbers, and underscores' };
+            }
+            return { valid: true, message: '' };
+        }
+        
+        /**
+         * Validate email format on the client side.
+         */
+        function validateEmail(email) {
+            const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+            return emailPattern.test(email);
+        }
+        
+        // Add real-time username validation
+        document.getElementById('username').addEventListener('input', function(e) {
+            const value = e.target.value;
+            const validation = validateUsername(value);
+            
+            if (value.length > 0 && !validation.valid) {
+                e.target.setCustomValidity(validation.message);
+            } else {
+                e.target.setCustomValidity('');
+            }
+        });
+        
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             
             // Hide previous errors
             errorBox.style.display = 'none';
             
-            // Get form data
-            const username = document.getElementById('username').value;
-            const email = document.getElementById('email').value;
-            const accessCode = document.getElementById('accessCode').value;
+            // Get form data and trim whitespace
+            const username = document.getElementById('username').value.trim();
+            const email = document.getElementById('email').value.trim().toLowerCase();
+            const accessCode = document.getElementById('accessCode').value.trim();
+            
+            // Client-side validation
+            const usernameValidation = validateUsername(username);
+            if (!usernameValidation.valid) {
+                errorBox.textContent = usernameValidation.message;
+                errorBox.style.display = 'block';
+                return;
+            }
+            
+            if (!validateEmail(email)) {
+                errorBox.textContent = 'Please enter a valid email address';
+                errorBox.style.display = 'block';
+                return;
+            }
+            
+            if (username.length < 3 || username.length > 50) {
+                errorBox.textContent = 'Username must be between 3 and 50 characters';
+                errorBox.style.display = 'block';
+                return;
+            }
             
             // Disable button
             submitBtn.disabled = true;
@@ -326,29 +405,30 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    // Show success modal
-                    currentApiKey = data.api_key;
-                    document.getElementById('resultUsername').textContent = data.username;
-                    document.getElementById('resultEmail').textContent = data.email;
-                    document.getElementById('resultQuota').textContent = data.quota_tokens.toLocaleString() + ' tokens';
-                    document.getElementById('apiKeyBox').textContent = data.api_key;
+                    // Show success modal with sanitized data
+                    currentApiKey = data.api_key || '';
+                    safeSetText('resultUsername', data.username);
+                    safeSetText('resultEmail', data.email);
+                    safeSetText('resultQuota', (data.quota_tokens || 0).toLocaleString() + ' tokens');
+                    safeSetText('apiKeyBox', data.api_key);
                     
                     // Show API base URL if provided
                     if (data.api_base_url) {
-                        document.getElementById('apiBaseUrl').textContent = data.api_base_url;
+                        safeSetText('apiBaseUrl', data.api_base_url);
                         document.getElementById('apiUrlLine').style.display = 'inline';
                     }
                     
                     // Show usage example if provided
                     if (data.usage_example) {
-                        document.getElementById('usageExample').textContent = data.usage_example;
+                        safeSetText('usageExample', data.usage_example);
                         document.getElementById('usageExampleSection').style.display = 'block';
                     }
                     
                     successModal.style.display = 'flex';
                 } else {
-                    // Show error
-                    errorBox.textContent = data.detail || 'Registration failed';
+                    // Show error (sanitized)
+                    const errorMessage = data.detail || 'Registration failed';
+                    safeSetText('errorBox', errorMessage);
                     errorBox.style.display = 'block';
                 }
             } catch (error) {

@@ -24,6 +24,26 @@ def validate_email(email: str) -> bool:
     return re.match(email_pattern, email) is not None
 
 
+def validate_username(username: str) -> tuple[bool, str]:
+    """
+    Validate username format.
+    Returns (is_valid, error_message).
+    """
+    # Check for spaces
+    if ' ' in username:
+        return False, "Username cannot contain spaces"
+    
+    # Check alphanumeric (allows underscores)
+    if not re.match(r'^[a-zA-Z0-9_]+$', username):
+        return False, "Username must be alphanumeric (letters, numbers, and underscores only)"
+    
+    # Check that it starts with a letter
+    if username[0].isdigit() or username[0] == '_':
+        return False, "Username must start with a letter"
+    
+    return True, ""
+
+
 @router.post("", response_model=RegistrationResponse, status_code=status.HTTP_201_CREATED)
 def register_user(
     registration_data: RegistrationRequest,
@@ -59,6 +79,14 @@ def register_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid access code"
+        )
+    
+    # Validate username format (extra layer of validation beyond Pydantic)
+    username_valid, username_error = validate_username(registration_data.username)
+    if not username_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=username_error
         )
     
     # Validate email format
