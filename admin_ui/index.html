@@ -394,6 +394,74 @@
         .btn-toggle:hover {
             background: #e2e8f0;
         }
+
+        /* Server Logs Styles */
+        .log-list {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+        }
+
+        .log-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .log-item:last-child {
+            border-bottom: none;
+        }
+
+        .log-item:hover {
+            background: #f7fafc;
+        }
+
+        .log-item-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .log-item-name {
+            font-weight: 500;
+            color: #2d3748;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        .log-item-meta {
+            font-size: 0.8rem;
+            color: #718096;
+            margin-top: 0.25rem;
+        }
+
+        .server-log-content {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 70vh;
+            overflow-y: auto;
+            line-height: 1.5;
+        }
+
+        .modal-content.large {
+            max-width: 900px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: #718096;
+        }
     </style>
 </head>
 <body>
@@ -460,6 +528,17 @@
                 <div class="loading">Loading teams...</div>
             </div>
         </div>
+
+        <!-- Server Logs -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Server Logs</h2>
+                <button class="btn btn-secondary" onclick="loadServerLogs()">↻ Refresh</button>
+            </div>
+            <div id="serverLogsContainer">
+                <div class="loading">Loading server logs...</div>
+            </div>
+        </div>
         </div>
     </div>
 
@@ -501,6 +580,21 @@
             </div>
             <div class="form-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeLogsModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Server Log Viewer Modal -->
+    <div class="modal" id="serverLogModal" onclick="closeServerLogModalOnBackdrop(event)">
+        <div class="modal-content large" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3 class="modal-title" id="serverLogModalTitle">Server Log</h3>
+            </div>
+            <div id="serverLogContent">
+                <div class="loading">Loading log content...</div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeServerLogModal()">Close</button>
             </div>
         </div>
     </div>
@@ -574,6 +668,7 @@
             document.getElementById('mainApp').style.display = 'block';
             loadStats();
             loadTeams();
+            loadServerLogs();
         }
 
         function logout() {
@@ -933,6 +1028,96 @@
             }).catch(err => {
                 alert('Failed to copy token. Full token: ' + token);
             });
+        }
+
+        // Server Logs Functions
+        async function loadServerLogs() {
+            const container = document.getElementById('serverLogsContainer');
+            container.innerHTML = '<div class="loading">Loading server logs...</div>';
+            
+            try {
+                const response = await fetch('/admin/server-logs', {
+                    headers: getHeaders()
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load server logs');
+                }
+                
+                const logs = await response.json();
+                
+                if (logs.length === 0) {
+                    container.innerHTML = '<div class="empty-state">No server logs found. Logs will appear here after the server runs with the updated start script.</div>';
+                    return;
+                }
+                
+                let html = '<div class="log-list">';
+                logs.forEach(log => {
+                    const date = new Date(log.modified * 1000);
+                    const size = formatFileSize(log.size);
+                    html += `
+                        <div class="log-item" onclick="viewServerLog('${escapeHtml(log.filename)}')">
+                            <div class="log-item-info">
+                                <span class="log-item-name">📄 ${escapeHtml(log.filename)}</span>
+                                <span class="log-item-meta">${date.toLocaleString()} • ${size}</span>
+                            </div>
+                            <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); viewServerLog('${escapeHtml(log.filename)}')">View</button>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                
+                container.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading server logs:', error);
+                container.innerHTML = '<div class="error">Failed to load server logs. Make sure the logs folder exists.</div>';
+            }
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        async function viewServerLog(filename) {
+            document.getElementById('serverLogModal').classList.add('active');
+            document.getElementById('serverLogModalTitle').textContent = filename;
+            document.getElementById('serverLogContent').innerHTML = '<div class="loading">Loading log content...</div>';
+            
+            try {
+                const response = await fetch(`/admin/server-logs/${encodeURIComponent(filename)}`, {
+                    headers: getHeaders()
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load log content');
+                }
+                
+                const content = await response.text();
+                
+                if (!content.trim()) {
+                    document.getElementById('serverLogContent').innerHTML = '<div class="empty-state">Log file is empty.</div>';
+                    return;
+                }
+                
+                document.getElementById('serverLogContent').innerHTML = `<pre class="server-log-content">${escapeHtml(content)}</pre>`;
+            } catch (error) {
+                console.error('Error loading log content:', error);
+                document.getElementById('serverLogContent').innerHTML = '<div class="error">Failed to load log content.</div>';
+            }
+        }
+
+        function closeServerLogModal() {
+            document.getElementById('serverLogModal').classList.remove('active');
+        }
+
+        function closeServerLogModalOnBackdrop(event) {
+            if (event.target.id === 'serverLogModal') {
+                closeServerLogModal();
+            }
         }
     </script>
 </body>

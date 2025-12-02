@@ -1,7 +1,9 @@
 """Admin API endpoints for team management."""
+import os
 import secrets
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -12,6 +14,10 @@ from app.models.schemas import (
     TeamCreate, TeamUpdate, TeamResponse, TeamStats,
     RequestLogResponse, AdminStats
 )
+
+# Get the project root directory (parent of 'app' folder)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+LOGS_DIR = os.path.join(PROJECT_ROOT, "logs")
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -282,4 +288,65 @@ def get_team_logs(
     ).offset(skip).limit(limit).all()
     
     return logs
+
+
+@router.get("/server-logs")
+def list_server_logs(
+    authenticated: bool = Depends(verify_admin_password)
+):
+    """List all available server log files."""
+    if not os.path.exists(LOGS_DIR):
+        return []
+    
+    log_files = []
+    for filename in os.listdir(LOGS_DIR):
+        if filename.endswith('.log'):
+            filepath = os.path.join(LOGS_DIR, filename)
+            stat = os.stat(filepath)
+            log_files.append({
+                "filename": filename,
+                "size": stat.st_size,
+                "modified": stat.st_mtime
+            })
+    
+    # Sort by modified time, newest first
+    log_files.sort(key=lambda x: x["modified"], reverse=True)
+    return log_files
+
+
+@router.get("/server-logs/{filename}", response_class=PlainTextResponse)
+def get_server_log_content(
+    filename: str,
+    authenticated: bool = Depends(verify_admin_password)
+):
+    """Get the content of a specific server log file."""
+    # Security: prevent directory traversal
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid filename"
+        )
+    
+    if not filename.endswith('.log'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file type"
+        )
+    
+    filepath = os.path.join(LOGS_DIR, filename)
+    
+    if not os.path.exists(filepath):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Log file '{filename}' not found"
+        )
+    
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+            return f.read()
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error reading log file: {str(e)}"
+        )
 

@@ -56,12 +56,18 @@ fi
 echo "✅ All required variables are set"
 echo ""
 
-# Start in background
-nohup python run.py > tokenrouter.log 2>&1 &
+# Create logs directory if it doesn't exist
+mkdir -p logs
+
+# Generate timestamped log filename
+LOG_FILE="logs/tokenrouter_$(date +%Y%m%d_%H%M%S).log"
+
+# Start in background with timestamped log file
+nohup python run.py > "$LOG_FILE" 2>&1 &
 PID=$!
 
 echo "✅ TokenRouter started in background (PID: $PID)"
-echo "📝 Logs are being written to: tokenrouter.log"
-echo "🔍 View logs: tail -f tokenrouter.log"
+echo "📝 Logs are being written to: $LOG_FILE"
+echo "🔍 View logs: tail -f $LOG_FILE"
 echo "🛑 Stop server: kill $PID"
 

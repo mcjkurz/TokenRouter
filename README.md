@@ -23,7 +23,7 @@ export ADMIN_PASSWORD='your-secure-password'
 - `./check_status.sh` - Check if server is running and responding
 - `./kill_ports.sh` - Kill any process using port 8000
 - `./start_foreground.sh` - Start server in foreground
-- `./start_background.sh` - Start server in background (logs to `tokenrouter.log`)
+- `./start_background.sh` - Start server in background (logs to `logs/tokenrouter_YYYYMMDD_HHMMSS.log`)
 
 **Configuration:**
 
