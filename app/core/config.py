@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     provider_base_url: str = Field(default=os.getenv("PROVIDER_BASE_URL", ""))
     provider_timeout: float = Field(default=float(os.getenv("PROVIDER_TIMEOUT", "120.0")))
     default_model: str = Field(default=os.getenv("DEFAULT_MODEL", "GPT-5-nano"))
-    allowed_models: str = Field(default=os.getenv("ALLOWED_MODELS", "GPT-5.1,GPT-5.1-Instant,GPT-5-nano,GPT-5-mini,GPT-5,Gemini-2.5-Flash,Gemini-2.5-Pro,Claude-Haiku-4.5,Claude-Sonnet-4.5"))
+    allowed_models: str = Field(default=os.getenv("ALLOWED_MODELS", "GPT-5.1,GPT-5.1-Instant,GPT-5-nano,GPT-5-mini,GPT-5,Gemini-2.5-Flash,Gemini-2.5-Pro,Claude-Haiku-4.5,Claude-Sonnet-4.5,DeepSeek-R1,DeepSeek-V3.2"))
     database_url: str = Field(default=os.getenv("DATABASE_URL", "sqlite:///./data/tokenrouter.db"))
     host: str = Field(default=os.getenv("HOST", "0.0.0.0"))
     port: int = Field(default=int(os.getenv("PORT", "8000")))

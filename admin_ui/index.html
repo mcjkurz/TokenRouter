@@ -714,8 +714,9 @@
                 });
                 
                 if (response.ok) {
+                    const statsData = await response.json();
                     localStorage.setItem('adminPassword', adminPassword);
-                    showMainApp();
+                    showMainApp(statsData);
                 } else {
                     document.getElementById('loginError').textContent = 'Invalid password';
                     document.getElementById('loginError').style.display = 'block';
@@ -737,7 +738,8 @@
                 });
                 
                 if (response.ok) {
-                    showMainApp();
+                    const statsData = await response.json();
+                    showMainApp(statsData);
                 } else {
                     logout();
                 }
@@ -746,10 +748,14 @@
             }
         }
 
-        function showMainApp() {
+        function showMainApp(statsData = null) {
             document.getElementById('loginScreen').style.display = 'none';
             document.getElementById('mainApp').style.display = 'block';
-            loadStats();
+            if (statsData) {
+                displayStats(statsData);
+            } else {
+                loadStats();
+            }
             loadTeams();
             loadServerLogs();
         }
@@ -770,17 +776,20 @@
             };
         }
 
+        function displayStats(data) {
+            document.getElementById('totalTeams').textContent = data.total_teams;
+            document.getElementById('activeTeams').textContent = data.active_teams;
+            document.getElementById('totalRequests').textContent = data.total_requests.toLocaleString();
+            document.getElementById('tokensUsed').textContent = data.total_tokens_used.toLocaleString();
+        }
+
         async function loadStats() {
             try {
                 const response = await fetch('/admin/stats', {
                     headers: getHeaders()
                 });
                 const data = await response.json();
-                
-                document.getElementById('totalTeams').textContent = data.total_teams;
-                document.getElementById('activeTeams').textContent = data.active_teams;
-                document.getElementById('totalRequests').textContent = data.total_requests.toLocaleString();
-                document.getElementById('tokensUsed').textContent = data.total_tokens_used.toLocaleString();
+                displayStats(data);
             } catch (error) {
                 console.error('Error loading stats:', error);
             }
