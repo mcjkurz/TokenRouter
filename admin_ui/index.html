@@ -757,7 +757,7 @@
                 loadStats();
             }
             loadTeams();
-            loadServerLogs();
+            // Server logs are loaded lazily when the tab is clicked
         }
 
         function logout() {
