@@ -2,6 +2,9 @@
 .env
 *.env
 
+# Provider configuration (contains API keys)
+providers.json
+
 # Database and data
 *.db
 *.db-journal

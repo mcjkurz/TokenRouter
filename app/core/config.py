@@ -15,40 +15,25 @@ class Settings(BaseSettings):
         extra="ignore",
     )
     
-    provider_api_key: str = Field(default="")
-    provider_base_url: str = Field(default="")
+    # Provider settings (now optional - providers.json is the source of truth)
     provider_timeout: float = Field(default=120.0)
-    default_model: str = Field(default="GPT-5-nano")
-    allowed_models: str = Field(default="GPT-5.1,GPT-5.1-Instant,GPT-5-nano,GPT-5-mini,GPT-5,Gemini-2.5-Flash,Gemini-2.5-Pro,Claude-Haiku-4.5,Claude-Sonnet-4.5,DeepSeek-R1,DeepSeek-V3.2,qwen3-coder-next:latest")
+    default_model: str = Field(default="gpt-4o")
+    
+    # Server settings
     database_url: str = Field(default="sqlite:///./data/tokenrouter.db")
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=8000)
     admin_password: str = Field(default="")
     
+    # Registration settings
     registration_enabled: bool = Field(default=True)
     registration_access_codes: str = Field(default="")
     allowed_email_domains: str = Field(default="ln.hk,ln.edu.hk")
     default_registration_quota: int = Field(default=500000)
     public_api_url: str = Field(default="")
     
+    # API documentation
     enable_api_docs: bool = Field(default=False)
-    
-    @property
-    def allowed_models_list(self) -> List[str]:
-        """Parse allowed models from comma-separated string.
-        
-        Returns models in their original casing for display purposes.
-        """
-        return [m.strip() for m in self.allowed_models.split(",") if m.strip()]
-    
-    @property
-    def allowed_models_lowercase(self) -> List[str]:
-        """Get lowercase versions of allowed models for case-insensitive comparison."""
-        return [m.lower() for m in self.allowed_models_list]
-    
-    def is_model_allowed(self, model: str) -> bool:
-        """Check if a model is allowed (case-insensitive)."""
-        return model.lower() in self.allowed_models_lowercase
     
     @property
     def allowed_email_domains_list(self) -> List[str]:
@@ -73,12 +58,6 @@ class Settings(BaseSettings):
         """Check if all required settings are provided."""
         missing = []
         
-        if not self.provider_api_key:
-            missing.append("PROVIDER_API_KEY")
-        
-        if not self.provider_base_url:
-            missing.append("PROVIDER_BASE_URL")
-        
         if not self.admin_password:
             missing.append("ADMIN_PASSWORD")
         
@@ -91,14 +70,13 @@ class Settings(BaseSettings):
             print("\n1. Copy .env.example to .env:")
             print("   cp .env.example .env")
             print("\n2. Edit .env and fill in your values:")
-            print("   PROVIDER_API_KEY=your-api-key-here")
-            print("   PROVIDER_BASE_URL=https://api.poe.com/v1")
             print("   ADMIN_PASSWORD=your-secure-password")
-            print("\n3. Start the application:")
+            print("\n3. Configure providers in providers.json:")
+            print("   cp providers.example.json providers.json")
+            print("\n4. Start the application:")
             print("   python run.py")
             print("="*60 + "\n")
             sys.exit(1)
 
 
 settings = Settings()
-

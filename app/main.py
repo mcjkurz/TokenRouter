@@ -8,29 +8,25 @@ from fastapi.responses import FileResponse, RedirectResponse
 
 from app.core.config import settings
 from app.core.database import init_db
+from app.core.providers import provider_config
 from app.api import proxy, admin, registration
 
-# Get logger
 logger = logging.getLogger("uvicorn.error")
 
-# Initialize configuration and validate required settings
 settings.validate_required_settings()
 
-# Create FastAPI app
 app = FastAPI(
     title="TokenRouter",
     description="Lightweight proxy service for sharing LLM accounts with token quotas",
     version="1.0.0",
-    docs_url="/docs" if settings.enable_api_docs else None,  # Disable docs if configured
-    redoc_url="/redoc" if settings.enable_api_docs else None  # Disable redoc if configured
+    docs_url="/docs" if settings.enable_api_docs else None,
+    redoc_url="/redoc" if settings.enable_api_docs else None
 )
 
-# Include routers
 app.include_router(proxy.router, tags=["proxy"])
-app.include_router(admin.router, tags=["admin"], include_in_schema=False)  # Hide admin endpoints from docs
+app.include_router(admin.router, tags=["admin"], include_in_schema=False)
 app.include_router(registration.router, tags=["registration"])
 
-# Mount static files for admin UI
 admin_ui_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "admin_ui")
 if os.path.exists(admin_ui_path):
     app.mount("/static", StaticFiles(directory=admin_ui_path), name="static")
@@ -46,6 +42,10 @@ async def startup_event():
     logger.info(f"👤 Registration page: http://{settings.host}:{settings.port}/register")
     if settings.enable_api_docs:
         logger.info(f"📖 API docs: http://{settings.host}:{settings.port}/docs")
+    
+    logger.info(f"🔌 Providers configured: {', '.join(provider_config.providers.keys())}")
+    if provider_config.default_provider:
+        logger.info(f"📦 Default provider: {provider_config.default_provider_name}")
 
 
 @app.get("/")
@@ -84,23 +84,45 @@ async def health_check():
     from sqlalchemy import text
     from app.core.database import SessionLocal
     
-    status = {"status": "healthy", "components": {}}
+    status_response = {"status": "healthy", "components": {}}
     
-    # Check database
     try:
         db = SessionLocal()
         db.execute(text("SELECT 1"))
         db.close()
-        status["components"]["database"] = "ok"
+        status_response["components"]["database"] = "ok"
     except Exception as e:
-        status["status"] = "unhealthy"
-        status["components"]["database"] = f"error: {str(e)}"
+        status_response["status"] = "unhealthy"
+        status_response["components"]["database"] = f"error: {str(e)}"
     
-    # Check provider config
-    if settings.provider_api_key:
-        status["components"]["provider_config"] = "ok"
+    if provider_config.providers:
+        status_response["components"]["providers"] = {
+            "count": len(provider_config.providers),
+            "names": list(provider_config.providers.keys()),
+            "default": provider_config.default_provider_name
+        }
     else:
-        status["components"]["provider_config"] = "missing_api_key"
+        status_response["status"] = "unhealthy"
+        status_response["components"]["providers"] = "no providers configured"
     
-    return status
+    return status_response
 
+
+@app.post("/admin/reload-providers")
+async def reload_providers():
+    """Reload provider configuration from providers.json without restart."""
+    from app.core.auth import get_admin_auth
+    from fastapi import Depends
+    
+    try:
+        provider_config.reload()
+        return {
+            "status": "ok",
+            "providers": list(provider_config.providers.keys()),
+            "default": provider_config.default_provider_name
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "detail": str(e)
+        }

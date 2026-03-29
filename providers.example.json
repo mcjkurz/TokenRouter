@@ -1,0 +1,25 @@
+{
+  "default_provider": "ollama",
+  "providers": {
+    "ollama": {
+      "base_url": "http://localhost:11434/v1",
+      "api_key": null,
+      "models": ["llama3:*", "mistral:*", "qwen*", "phi3:*", "gemma:*"]
+    },
+    "openai": {
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "sk-your-openai-key-here",
+      "models": ["gpt-4*", "gpt-3.5*", "o1-*", "o3-*"]
+    },
+    "anthropic": {
+      "base_url": "https://api.anthropic.com/v1",
+      "api_key": "sk-ant-your-key-here",
+      "models": ["claude-3*", "claude-4*"]
+    },
+    "custom-provider": {
+      "base_url": "https://your-custom-api.com/v1",
+      "api_key": "your-api-key",
+      "models": ["GPT-5*", "custom-model"]
+    }
+  }
+}

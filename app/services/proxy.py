@@ -1,34 +1,47 @@
-"""Proxy service for forwarding requests to LLM provider."""
+"""Proxy service for forwarding requests to LLM providers."""
 import httpx
 import json
-from typing import Dict, Any, AsyncGenerator
+from typing import Dict, Any, AsyncGenerator, Optional
 from fastapi import HTTPException, status
 
 from app.core.config import settings
+from app.core.providers import provider_config, Provider
 
 
 class ProxyService:
-    """Service for proxying requests to LLM provider."""
+    """Service for proxying requests to LLM providers based on model routing."""
     
     def __init__(self):
-        self.base_url = settings.provider_base_url
-        self.api_key = settings.provider_api_key
         self.timeout = settings.provider_timeout
+    
+    def _get_provider_for_model(self, model: str) -> Provider:
+        """Get the provider that handles this model."""
+        provider = provider_config.get_provider_for_model(model)
+        if not provider:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No provider configured for model '{model}'"
+            )
+        return provider
     
     async def forward_chat_completion_stream(
         self, payload: Dict[str, Any]
     ) -> AsyncGenerator[bytes, None]:
         """
-        Forward streaming chat completion request to provider.
+        Forward streaming chat completion request to the appropriate provider.
         
         Yields raw SSE chunks from the provider.
         """
+        model = payload.get("model", "")
+        provider = self._get_provider_for_model(model)
+        
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
+        if provider.api_key:
+            headers["Authorization"] = f"Bearer {provider.api_key}"
         
-        url = f"{self.base_url.rstrip('/')}/chat/completions"
+        url = f"{provider.base_url.rstrip('/')}/chat/completions"
         
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -48,7 +61,7 @@ class ProxyService:
                             pass
                         raise HTTPException(
                             status_code=response.status_code,
-                            detail=f"Provider error: {error_detail}"
+                            detail=f"Provider '{provider.name}' error: {error_detail}"
                         )
                     
                     async for chunk in response.aiter_bytes():
@@ -57,12 +70,12 @@ class ProxyService:
         except httpx.TimeoutException:
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="Request to provider timed out"
+                detail=f"Request to provider '{provider.name}' timed out"
             )
         except httpx.RequestError as e:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Error connecting to provider: {str(e)}"
+                detail=f"Error connecting to provider '{provider.name}': {str(e)}"
             )
         except HTTPException:
             raise
@@ -74,10 +87,10 @@ class ProxyService:
     
     async def forward_chat_completion(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Forward chat completion request to provider.
+        Forward chat completion request to the appropriate provider.
         
         Args:
-            payload: Request payload
+            payload: Request payload including 'model' field
         
         Returns:
             Provider response
@@ -85,12 +98,16 @@ class ProxyService:
         Raises:
             HTTPException: If request fails
         """
+        model = payload.get("model", "")
+        provider = self._get_provider_for_model(model)
+        
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
+        if provider.api_key:
+            headers["Authorization"] = f"Bearer {provider.api_key}"
         
-        url = f"{self.base_url.rstrip('/')}/chat/completions"
+        url = f"{provider.base_url.rstrip('/')}/chat/completions"
         
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -110,7 +127,7 @@ class ProxyService:
                     
                     raise HTTPException(
                         status_code=response.status_code,
-                        detail=f"Provider error: {error_detail}"
+                        detail=f"Provider '{provider.name}' error: {error_detail}"
                     )
                 
                 return response.json()
@@ -118,12 +135,12 @@ class ProxyService:
         except httpx.TimeoutException:
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="Request to provider timed out"
+                detail=f"Request to provider '{provider.name}' timed out"
             )
         except httpx.RequestError as e:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Error connecting to provider: {str(e)}"
+                detail=f"Error connecting to provider '{provider.name}': {str(e)}"
             )
         except HTTPException:
             raise
@@ -135,4 +152,3 @@ class ProxyService:
 
 
 proxy_service = ProxyService()
-

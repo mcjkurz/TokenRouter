@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.auth import validate_team_token, check_quota, check_rate_limit
-from app.core.config import settings
+from app.core.providers import provider_config
 from app.models.database import Team
 from app.models.schemas import ChatCompletionRequest, ChatCompletionResponse
 from app.services.proxy import proxy_service
@@ -19,9 +19,10 @@ async def list_models():
     """
     List available models.
     
-    Returns simple list of model names. No authentication required.
+    Returns all model patterns from all configured providers.
+    No authentication required.
     """
-    return settings.allowed_models_list
+    return provider_config.get_all_model_names()
 
 
 @router.get("/v1/usage/{username}")
@@ -35,7 +36,6 @@ async def get_usage(
     No authentication required. Returns empty response if team doesn't exist.
     This endpoint does not consume tokens - it's for checking your quota.
     """
-    # Look up team by name (case-insensitive)
     team = db.query(Team).filter(Team.name.ilike(username)).first()
     
     if not team:
@@ -44,7 +44,6 @@ async def get_usage(
     remaining = team.quota_tokens - team.used_tokens
     usage_percentage = (team.used_tokens / team.quota_tokens * 100) if team.quota_tokens > 0 else 0
     
-    # Get request count
     from app.models.database import RequestLog
     total_requests = db.query(RequestLog).filter(RequestLog.team_id == team.id).count()
     
@@ -69,25 +68,21 @@ async def chat_completions(
     """
     Proxy endpoint for chat completions.
     
-    Validates team token, checks quota, forwards request to provider,
+    Validates team token, checks quota, routes request to appropriate provider,
     and tracks usage.
     """
-    # Check rate limit and quota before processing
     check_rate_limit(team)
     check_quota(team)
     
-    # Lowercase model for case-insensitive comparison and storage
     model_lower = request.model.lower()
     
-    # Validate model (case-insensitive)
-    if not settings.is_model_allowed(request.model):
-        available_models = ', '.join(settings.allowed_models_list)
+    if not provider_config.is_model_allowed(request.model):
+        available_models = ', '.join(provider_config.get_all_model_names())
         error_msg = (
             f"Model '{request.model}' is not available. "
             f"Available models: {available_models}. "
             f"You can also list models at GET /v1/models"
         )
-        # Log with request data (using lowercase model)
         request_data = request.model_dump(exclude_none=True)
         request_data["model"] = model_lower
         log_request(
@@ -100,12 +95,10 @@ async def chat_completions(
         )
     
     try:
-        # Handle streaming requests
         if request.stream:
             payload = request.model_dump(exclude_none=True)
             payload["model"] = model_lower
             
-            # Log the streaming request (we can't track exact tokens for streaming)
             log_request(
                 db, team.id, model_lower, 0, 0, "streaming",
                 request_payload=payload
@@ -119,19 +112,16 @@ async def chat_completions(
                     "Connection": "keep-alive",
                 }
             )
-        # Forward request to provider
+        
         payload = request.model_dump(exclude_none=True)
-        # Use lowercase model in payload for consistency
         payload["model"] = model_lower
         response_data = await proxy_service.forward_chat_completion(payload)
         
-        # Extract token usage from response
         usage = response_data.get("usage", {})
         input_tokens = usage.get("prompt_tokens", 0)
         output_tokens = usage.get("completion_tokens", 0)
         total_tokens = usage.get("total_tokens", 0)
         
-        # Log successful request with full payload data (using lowercase model)
         log_request(
             db, team.id, model_lower,
             input_tokens, output_tokens, "success",
@@ -139,13 +129,11 @@ async def chat_completions(
             response_payload=response_data
         )
         
-        # Update team usage
         update_team_usage(db, team.id, total_tokens)
         
         return response_data
     
     except HTTPException as e:
-        # Log failed request with request data (using lowercase model)
         request_data = request.model_dump(exclude_none=True)
         request_data["model"] = model_lower
         log_request(
@@ -156,7 +144,6 @@ async def chat_completions(
         raise
     
     except Exception as e:
-        # Log unexpected error with request data (using lowercase model)
         request_data = request.model_dump(exclude_none=True)
         request_data["model"] = model_lower
         log_request(
@@ -168,4 +155,3 @@ async def chat_completions(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal error: {str(e)}"
         )
-
