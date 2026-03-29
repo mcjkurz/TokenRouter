@@ -24,6 +24,7 @@ class ProviderConfig:
         self.config_path = Path(config_path)
         self.providers: Dict[str, Provider] = {}
         self.default_provider_name: Optional[str] = None
+        self.default_model: Optional[str] = None
         self._load()
 
     def _load(self) -> None:
@@ -39,6 +40,7 @@ class ProviderConfig:
             sys.exit(1)
 
         self.default_provider_name = data.get("default_provider")
+        self.default_model = data.get("default_model")
         for name, cfg in data.get("providers", {}).items():
             self.providers[name] = Provider(
                 name=name,
@@ -77,9 +79,16 @@ class ProviderConfig:
                     out.append(m)
         return sorted(out)
 
+    def resolve_model(self, model: str) -> str:
+        """Replace 'default' or 'default-model' with the configured default_model."""
+        if model.lower() in ("default", "default-model") and self.default_model:
+            return self.default_model
+        return model
+
     def reload(self) -> None:
         self.providers.clear()
         self.default_provider_name = None
+        self.default_model = None
         self._load()
 
 

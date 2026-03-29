@@ -35,6 +35,7 @@ cp providers.example.json providers.json  # edit with your providers
 ```json
 {
   "default_provider": "openai",
+  "default_model": "gpt-5",
   "providers": {
     "openai": {
       "base_url": "https://api.openai.com/v1",
@@ -44,6 +45,8 @@ cp providers.example.json providers.json  # edit with your providers
   }
 }
 ```
+
+- `default_model` — When a request uses model name `"default"` or `"default-model"`, it is replaced with this value before routing.
 
 ## Running
 

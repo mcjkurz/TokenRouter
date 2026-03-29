@@ -1,5 +1,6 @@
 {
   "default_provider": "ollama",
+  "default_model": "claude-opus-4.5",
   "providers": {
     "ollama": {
       "base_url": "http://localhost:11434/v1",

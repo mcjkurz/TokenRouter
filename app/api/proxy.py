@@ -58,7 +58,8 @@ async def _proxy(request: Request, team: Team, db: Session, endpoint: str):
     check_quota(team)
 
     payload: Dict[str, Any] = await request.json()
-    model = payload.get("model", "")
+    model = provider_config.resolve_model(payload.get("model", ""))
+    payload["model"] = model
     is_stream = payload.get("stream", False)
 
     logger.info(f"[api] {model} stream={is_stream} -> /{endpoint}")
