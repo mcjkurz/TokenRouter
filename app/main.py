@@ -37,11 +37,9 @@ async def startup_event():
     """Initialize database on startup."""
     init_db()
     logger.info("✅ TokenRouter started successfully!")
-    logger.info(f"📍 Proxy endpoint: http://{settings.host}:{settings.port}/v1/chat/completions")
-    logger.info(f"🔧 Admin interface: http://{settings.host}:{settings.port}/admin")
-    logger.info(f"👤 Registration page: http://{settings.host}:{settings.port}/register")
-    if settings.enable_api_docs:
-        logger.info(f"📖 API docs: http://{settings.host}:{settings.port}/docs")
+    logger.info("📍 Proxy endpoint: /v1/chat/completions")
+    logger.info("🔧 Admin interface: /admin")
+    logger.info("👤 Registration page: /register")
     
     logger.info(f"🔌 Providers configured: {', '.join(provider_config.providers.keys())}")
     if provider_config.default_provider:

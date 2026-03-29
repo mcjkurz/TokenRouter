@@ -21,8 +21,6 @@ class Settings(BaseSettings):
     
     # Server settings
     database_url: str = Field(default="sqlite:///./data/tokenrouter.db")
-    host: str = Field(default="127.0.0.1")
-    port: int = Field(default=8000)
     admin_password: str = Field(default="")
     
     # Registration settings
