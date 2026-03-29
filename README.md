@@ -46,7 +46,7 @@ cp providers.example.json providers.json  # edit with your providers
 }
 ```
 
-- `default_model` — When a request uses model name `"default"` or `"default-model"`, it is replaced with this value before routing.
+- `default_model` — When a request uses model name `"default"` or `"default-model"`, it is replaced with this value before routing. This is useful for IDE tool use (e.g., Cursor) where the IDE may modify the request schema based on recognized model names; using `"default-model"` prevents this.
 
 ## Running
 
