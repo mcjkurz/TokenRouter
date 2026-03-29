@@ -1,6 +1,7 @@
 """Proxy API endpoints — transparent passthrough to upstream providers."""
+import json
 import logging
-from typing import Any, Dict
+from typing import Any, AsyncGenerator, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -14,6 +15,68 @@ from app.services.usage import log_request, update_team_usage
 
 logger = logging.getLogger("uvicorn.error")
 router = APIRouter()
+
+
+async def _stream_with_usage_tracking(
+    generator: AsyncGenerator[bytes, None],
+    db: Session,
+    team_id: int,
+    model: str,
+    request_payload: Dict[str, Any],
+) -> AsyncGenerator[bytes, None]:
+    """
+    Wrap a streaming response to capture usage from the final chunk.
+    
+    Many providers (OpenAI, Anthropic) include usage stats in the last SSE chunk
+    when stream_options.include_usage is set. This wrapper extracts that data
+    and logs it after the stream completes.
+    """
+    usage_data: Optional[Dict[str, Any]] = None
+    error_occurred = False
+    
+    async for chunk in generator:
+        # Parse chunk to look for usage data
+        chunk_str = chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else chunk
+        
+        for line in chunk_str.split("\n"):
+            line = line.strip()
+            if not line.startswith("data: ") or line == "data: [DONE]":
+                continue
+            
+            try:
+                data = json.loads(line[6:])
+                # Capture usage from any chunk that has it (typically the last one)
+                if "usage" in data and data["usage"]:
+                    usage_data = data["usage"]
+                # Check if this was an error chunk
+                choices = data.get("choices", [])
+                if choices:
+                    delta = choices[0].get("delta", {})
+                    content = delta.get("content", "")
+                    if content.startswith("[Error]"):
+                        error_occurred = True
+            except (json.JSONDecodeError, IndexError, KeyError):
+                pass
+        
+        yield chunk
+    
+    # Stream complete - log usage
+    if error_occurred:
+        log_request(db, team_id, model, 0, 0, "error", "Streaming error",
+                    request_payload=request_payload)
+    elif usage_data:
+        inp = usage_data.get("prompt_tokens", 0) or usage_data.get("input_tokens", 0)
+        out = usage_data.get("completion_tokens", 0) or usage_data.get("output_tokens", 0)
+        total = usage_data.get("total_tokens", 0) or (inp + out)
+        
+        log_request(db, team_id, model, inp, out, "success",
+                    request_payload=request_payload)
+        update_team_usage(db, team_id, total)
+        logger.info(f"[stream] {model} usage: {inp} in, {out} out, {total} total")
+    else:
+        # Provider didn't include usage - log as streaming without token counts
+        log_request(db, team_id, model, 0, 0, "streaming",
+                    request_payload=request_payload)
 
 
 @router.get("/v1/models")
@@ -71,9 +134,17 @@ async def _proxy(request: Request, team: Team, db: Session, endpoint: str):
 
     try:
         if is_stream:
-            log_request(db, team.id, model, 0, 0, "streaming", request_payload=payload)
+            # Request usage in final chunk (supported by OpenAI, Anthropic, etc.)
+            if "stream_options" not in payload:
+                payload["stream_options"] = {"include_usage": True}
+            elif isinstance(payload.get("stream_options"), dict):
+                payload["stream_options"]["include_usage"] = True
+            
             return StreamingResponse(
-                proxy_service.forward_stream(payload, endpoint),
+                _stream_with_usage_tracking(
+                    proxy_service.forward_stream(payload, endpoint),
+                    db, team.id, model, payload
+                ),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
             )
