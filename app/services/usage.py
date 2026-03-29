@@ -68,15 +68,22 @@ def log_request(
 
 def update_team_usage(db: Session, team_id: int, tokens_used: int) -> None:
     """
-    Update team's token usage.
+    Update team's token usage atomically.
+    
+    Uses atomic SQL update to prevent race conditions when multiple
+    requests complete simultaneously for the same team.
     
     Args:
         db: Database session
         team_id: Team ID
         tokens_used: Number of tokens used
     """
-    team = db.query(Team).filter(Team.id == team_id).first()
-    if team:
-        team.used_tokens += tokens_used
-        db.commit()
+    from sqlalchemy import update
+    
+    db.execute(
+        update(Team)
+        .where(Team.id == team_id)
+        .values(used_tokens=Team.used_tokens + tokens_used)
+    )
+    db.commit()
 
