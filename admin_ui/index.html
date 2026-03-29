@@ -690,9 +690,9 @@
         let currentLogPage = 0;
         const LOGS_PER_PAGE = 50;
 
-        // Check if already logged in
+        // Check if already logged in (uses sessionStorage - cleared when browser closes)
         document.addEventListener('DOMContentLoaded', () => {
-            const savedPassword = localStorage.getItem('adminPassword');
+            const savedPassword = sessionStorage.getItem('adminPassword');
             if (savedPassword) {
                 adminPassword = savedPassword;
                 checkAuth();
@@ -715,10 +715,11 @@
                 
                 if (response.ok) {
                     const statsData = await response.json();
-                    localStorage.setItem('adminPassword', adminPassword);
+                    sessionStorage.setItem('adminPassword', adminPassword);
                     showMainApp(statsData);
                 } else {
-                    document.getElementById('loginError').textContent = 'Invalid password';
+                    const errorData = await response.json().catch(() => ({}));
+                    document.getElementById('loginError').textContent = errorData.detail || 'Invalid password';
                     document.getElementById('loginError').style.display = 'block';
                     adminPassword = null;
                 }
@@ -762,7 +763,7 @@
 
         function logout() {
             adminPassword = null;
-            localStorage.removeItem('adminPassword');
+            sessionStorage.removeItem('adminPassword');
             document.getElementById('loginScreen').style.display = 'flex';
             document.getElementById('mainApp').style.display = 'none';
             document.getElementById('adminPassword').value = '';

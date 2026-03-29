@@ -1,9 +1,12 @@
 """Admin API endpoints for team management."""
+import hmac
 import os
 import secrets
+import threading
+import time
 from datetime import datetime
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
+from typing import Dict, List
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Header, Request
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -22,10 +25,58 @@ LOGS_DIR = os.path.join(PROJECT_ROOT, "logs")
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
+# Simple brute-force protection for admin login
+_login_attempts_lock = threading.Lock()
+_login_attempts: Dict[str, List[float]] = {}
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 300  # 5 minutes
 
-def verify_admin_password(x_admin_password: str = Header(None)):
-    """Verify admin password from header."""
-    if not x_admin_password or x_admin_password != settings.admin_password:
+
+def _check_login_rate_limit(client_ip: str) -> None:
+    """Check if client has exceeded login attempt limit."""
+    now = time.time()
+    window_start = now - LOGIN_WINDOW_SECONDS
+    
+    with _login_attempts_lock:
+        if client_ip not in _login_attempts:
+            _login_attempts[client_ip] = []
+        
+        # Remove old attempts
+        _login_attempts[client_ip] = [
+            t for t in _login_attempts[client_ip] if t > window_start
+        ]
+        
+        if len(_login_attempts[client_ip]) >= MAX_LOGIN_ATTEMPTS:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Too many login attempts. Try again in {LOGIN_WINDOW_SECONDS // 60} minutes."
+            )
+
+
+def _record_login_attempt(client_ip: str) -> None:
+    """Record a failed login attempt."""
+    with _login_attempts_lock:
+        if client_ip not in _login_attempts:
+            _login_attempts[client_ip] = []
+        _login_attempts[client_ip].append(time.time())
+
+
+def verify_admin_password(
+    request: Request,
+    x_admin_password: str = Header(None)
+):
+    """Verify admin password from header with brute-force protection."""
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Check rate limit before attempting verification
+    _check_login_rate_limit(client_ip)
+    
+    # Use timing-safe comparison to prevent timing attacks
+    if not x_admin_password or not hmac.compare_digest(
+        x_admin_password.encode('utf-8'),
+        settings.admin_password.encode('utf-8')
+    ):
+        _record_login_attempt(client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid admin password"
