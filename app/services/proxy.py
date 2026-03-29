@@ -1,154 +1,137 @@
-"""Proxy service for forwarding requests to LLM providers."""
+"""Proxy service — forwards requests to upstream LLM providers."""
 import httpx
 import json
-from typing import Dict, Any, AsyncGenerator, Optional
+import logging
+import uuid
+import time
+from typing import Dict, Any, AsyncGenerator
 from fastapi import HTTPException, status
 
 from app.core.config import settings
 from app.core.providers import provider_config, Provider
 
+logger = logging.getLogger("uvicorn.error")
+
+
+def _create_error_chunk(message: str, model: str = "error") -> bytes:
+    """Build an SSE chunk that surfaces an error as assistant text."""
+    chunk = {
+        "id": f"chatcmpl-err-{uuid.uuid4().hex[:8]}",
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": model,
+        "choices": [{
+            "index": 0,
+            "delta": {"role": "assistant", "content": f"[Error] {message}"},
+            "finish_reason": "stop",
+        }],
+    }
+    return f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n".encode()
+
+
+def _resolve(payload: Dict[str, Any]) -> Provider:
+    """Look up the provider for the model in *payload*."""
+    model = payload.get("model", "")
+    provider = provider_config.get_provider_for_model(model)
+    if not provider:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No provider configured for model '{model}'",
+        )
+    return provider
+
+
+def _headers(provider: Provider) -> Dict[str, str]:
+    h = {"Content-Type": "application/json"}
+    if provider.api_key:
+        h["Authorization"] = f"Bearer {provider.api_key}"
+    return h
+
 
 class ProxyService:
-    """Service for proxying requests to LLM providers based on model routing."""
-    
     def __init__(self):
         self.timeout = settings.provider_timeout
-    
-    def _get_provider_for_model(self, model: str) -> Provider:
-        """Get the provider that handles this model."""
-        provider = provider_config.get_provider_for_model(model)
-        if not provider:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"No provider configured for model '{model}'"
-            )
-        return provider
-    
-    async def forward_chat_completion_stream(
-        self, payload: Dict[str, Any]
+
+    # ── streaming ────────────────────────────────────────────────
+
+    async def forward_stream(
+        self, payload: Dict[str, Any], endpoint: str
     ) -> AsyncGenerator[bytes, None]:
-        """
-        Forward streaming chat completion request to the appropriate provider.
-        
-        Yields raw SSE chunks from the provider.
-        """
+        provider = _resolve(payload)
+        url = f"{provider.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
         model = payload.get("model", "")
-        provider = self._get_provider_for_model(model)
-        
-        headers = {
-            "Content-Type": "application/json"
-        }
-        if provider.api_key:
-            headers["Authorization"] = f"Bearer {provider.api_key}"
-        
-        url = f"{provider.base_url.rstrip('/')}/chat/completions"
-        
+
+        logger.info(f"[stream] {model} -> {provider.name} /{endpoint}")
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                async with client.stream(
-                    "POST",
-                    url,
-                    json=payload,
-                    headers=headers
-                ) as response:
-                    if response.status_code != 200:
-                        error_text = await response.aread()
-                        error_detail = error_text.decode()
+                async with client.stream("POST", url, json=payload, headers=_headers(provider)) as resp:
+                    if resp.status_code != 200:
+                        body = (await resp.aread()).decode()
                         try:
-                            error_json = json.loads(error_detail)
-                            error_detail = error_json.get("error", {}).get("message", error_detail)
-                        except:
+                            body = json.loads(body).get("error", {}).get("message", body)
+                        except Exception:
                             pass
-                        raise HTTPException(
-                            status_code=response.status_code,
-                            detail=f"Provider '{provider.name}' error: {error_detail}"
-                        )
-                    
-                    async for chunk in response.aiter_bytes():
+                        msg = f"Provider '{provider.name}' returned {resp.status_code}: {body}"
+                        logger.error(f"[stream] {msg}")
+                        yield _create_error_chunk(msg, model)
+                        return
+
+                    chunks = 0
+                    async for chunk in resp.aiter_bytes():
+                        chunks += 1
                         yield chunk
-        
+                    logger.info(f"[stream] {model} done — {chunks} chunks")
+
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail=f"Request to provider '{provider.name}' timed out"
-            )
+            msg = f"Provider '{provider.name}' timed out"
+            logger.error(f"[stream] {msg}")
+            yield _create_error_chunk(msg, model)
         except httpx.RequestError as e:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Error connecting to provider '{provider.name}': {str(e)}"
-            )
+            msg = f"Cannot reach provider '{provider.name}': {e}"
+            logger.error(f"[stream] {msg}")
+            yield _create_error_chunk(msg, model)
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected error: {str(e)}"
-            )
-    
-    async def forward_chat_completion(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Forward chat completion request to the appropriate provider.
-        
-        Args:
-            payload: Request payload including 'model' field
-        
-        Returns:
-            Provider response
-        
-        Raises:
-            HTTPException: If request fails
-        """
+            msg = f"Unexpected error: {e}"
+            logger.error(f"[stream] {msg}")
+            yield _create_error_chunk(msg, model)
+
+    # ── non-streaming ────────────────────────────────────────────
+
+    async def forward(
+        self, payload: Dict[str, Any], endpoint: str
+    ) -> Dict[str, Any]:
+        provider = _resolve(payload)
+        url = f"{provider.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
         model = payload.get("model", "")
-        provider = self._get_provider_for_model(model)
-        
-        headers = {
-            "Content-Type": "application/json"
-        }
-        if provider.api_key:
-            headers["Authorization"] = f"Bearer {provider.api_key}"
-        
-        url = f"{provider.base_url.rstrip('/')}/chat/completions"
-        
+
+        logger.info(f"[request] {model} -> {provider.name} /{endpoint}")
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    url,
-                    json=payload,
-                    headers=headers
-                )
-                
-                if response.status_code != 200:
-                    error_detail = response.text
+                resp = await client.post(url, json=payload, headers=_headers(provider))
+
+                if resp.status_code != 200:
+                    detail = resp.text
                     try:
-                        error_json = response.json()
-                        error_detail = error_json.get("error", {}).get("message", error_detail)
-                    except:
+                        detail = resp.json().get("error", {}).get("message", detail)
+                    except Exception:
                         pass
-                    
-                    raise HTTPException(
-                        status_code=response.status_code,
-                        detail=f"Provider '{provider.name}' error: {error_detail}"
-                    )
-                
-                return response.json()
-        
+                    logger.error(f"[request] {provider.name} returned {resp.status_code}: {detail}")
+                    raise HTTPException(status_code=resp.status_code, detail=f"Provider error: {detail}")
+
+                return resp.json()
+
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail=f"Request to provider '{provider.name}' timed out"
-            )
+            raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, detail=f"Provider '{provider.name}' timed out")
         except httpx.RequestError as e:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Error connecting to provider '{provider.name}': {str(e)}"
-            )
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=f"Cannot reach provider '{provider.name}': {e}")
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected error: {str(e)}"
-            )
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Unexpected error: {e}")
 
 
 proxy_service = ProxyService()

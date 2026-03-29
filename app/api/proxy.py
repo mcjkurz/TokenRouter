@@ -1,5 +1,7 @@
-"""Proxy API endpoint for chat completions."""
-from fastapi import APIRouter, Depends, HTTPException, status
+"""Proxy API endpoints — transparent passthrough to upstream providers."""
+import logging
+from typing import Any, Dict
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -7,151 +9,110 @@ from app.core.database import get_db
 from app.core.auth import validate_team_token, check_quota, check_rate_limit
 from app.core.providers import provider_config
 from app.models.database import Team
-from app.models.schemas import ChatCompletionRequest, ChatCompletionResponse
 from app.services.proxy import proxy_service
 from app.services.usage import log_request, update_team_usage
 
+logger = logging.getLogger("uvicorn.error")
 router = APIRouter()
 
 
 @router.get("/v1/models")
 async def list_models():
-    """
-    List available models.
-    
-    Returns all model patterns from all configured providers.
-    No authentication required.
-    """
+    """List available model patterns from all providers. No auth required."""
     return provider_config.get_all_model_names()
 
 
 @router.get("/v1/usage/{username}")
-async def get_usage(
-    username: str,
-    db: Session = Depends(get_db)
-):
-    """
-    Get current usage and quota information for a team by username.
-    
-    No authentication required. Returns empty response if team doesn't exist.
-    This endpoint does not consume tokens - it's for checking your quota.
-    """
+async def get_usage(username: str, db: Session = Depends(get_db)):
+    """Get usage/quota for a user. No auth required."""
     team = db.query(Team).filter(Team.name.ilike(username)).first()
-    
     if not team:
         return {}
-    
-    remaining = team.quota_tokens - team.used_tokens
-    usage_percentage = (team.used_tokens / team.quota_tokens * 100) if team.quota_tokens > 0 else 0
-    
+
     from app.models.database import RequestLog
     total_requests = db.query(RequestLog).filter(RequestLog.team_id == team.id).count()
-    
+    remaining = team.quota_tokens - team.used_tokens
+
     return {
         "team_name": team.name,
         "quota_tokens": team.quota_tokens,
         "used_tokens": team.used_tokens,
         "remaining_tokens": remaining,
-        "usage_percentage": round(usage_percentage, 2),
+        "usage_percentage": round((team.used_tokens / team.quota_tokens * 100) if team.quota_tokens else 0, 2),
         "total_requests": total_requests,
         "max_requests_per_minute": team.max_requests_per_minute,
-        "is_active": team.is_active
+        "is_active": team.is_active,
     }
 
 
-@router.post("/v1/chat/completions")
-async def chat_completions(
-    request: ChatCompletionRequest,
-    team: Team = Depends(validate_team_token),
-    db: Session = Depends(get_db)
-):
+# ── shared proxy logic ──────────────────────────────────────────
+
+async def _proxy(request: Request, team: Team, db: Session, endpoint: str):
     """
-    Proxy endpoint for chat completions.
+    Transparent passthrough.
     
-    Validates team token, checks quota, routes request to appropriate provider,
-    and tracks usage.
+    Reads the raw JSON body, validates auth/quota/model,
+    then forwards the entire payload as-is to the upstream provider.
     """
     check_rate_limit(team)
     check_quota(team)
-    
-    model_lower = request.model.lower()
-    
-    if not provider_config.is_model_allowed(request.model):
-        available_models = ', '.join(provider_config.get_all_model_names())
-        error_msg = (
-            f"Model '{request.model}' is not available. "
-            f"Available models: {available_models}. "
-            f"You can also list models at GET /v1/models"
-        )
-        request_data = request.model_dump(exclude_none=True)
-        request_data["model"] = model_lower
-        log_request(
-            db, team.id, model_lower, 0, 0, "error", error_msg,
-            request_payload=request_data
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error_msg
-        )
-    
+
+    payload: Dict[str, Any] = await request.json()
+    model = payload.get("model", "")
+    is_stream = payload.get("stream", False)
+
+    logger.info(f"[api] {model} stream={is_stream} -> /{endpoint}")
+
+    if not provider_config.is_model_allowed(model):
+        error_msg = f"Model '{model}' not available. See GET /v1/models"
+        log_request(db, team.id, model, 0, 0, "error", error_msg, request_payload=payload)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=error_msg)
+
     try:
-        if request.stream:
-            payload = request.model_dump(exclude_none=True)
-            payload["model"] = model_lower
-            
-            log_request(
-                db, team.id, model_lower, 0, 0, "streaming",
-                request_payload=payload
-            )
-            
+        if is_stream:
+            log_request(db, team.id, model, 0, 0, "streaming", request_payload=payload)
             return StreamingResponse(
-                proxy_service.forward_chat_completion_stream(payload),
+                proxy_service.forward_stream(payload, endpoint),
                 media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                }
+                headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
             )
-        
-        payload = request.model_dump(exclude_none=True)
-        payload["model"] = model_lower
-        response_data = await proxy_service.forward_chat_completion(payload)
-        
+
+        response_data = await proxy_service.forward(payload, endpoint)
+
         usage = response_data.get("usage", {})
-        input_tokens = usage.get("prompt_tokens", 0)
-        output_tokens = usage.get("completion_tokens", 0)
-        total_tokens = usage.get("total_tokens", 0)
-        
-        log_request(
-            db, team.id, model_lower,
-            input_tokens, output_tokens, "success",
-            request_payload=payload,
-            response_payload=response_data
-        )
-        
-        update_team_usage(db, team.id, total_tokens)
-        
+        inp = usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0)
+        out = usage.get("completion_tokens", 0) or usage.get("output_tokens", 0)
+        total = usage.get("total_tokens", 0) or (inp + out)
+
+        log_request(db, team.id, model, inp, out, "success",
+                    request_payload=payload, response_payload=response_data)
+        update_team_usage(db, team.id, total)
         return response_data
-    
-    except HTTPException as e:
-        request_data = request.model_dump(exclude_none=True)
-        request_data["model"] = model_lower
-        log_request(
-            db, team.id, model_lower, 0, 0, "error",
-            str(e.detail),
-            request_payload=request_data
-        )
+
+    except HTTPException:
         raise
-    
     except Exception as e:
-        request_data = request.model_dump(exclude_none=True)
-        request_data["model"] = model_lower
-        log_request(
-            db, team.id, model_lower, 0, 0, "error",
-            str(e),
-            request_payload=request_data
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal error: {str(e)}"
-        )
+        log_request(db, team.id, model, 0, 0, "error", str(e), request_payload=payload)
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Internal error: {e}")
+
+
+# ── endpoints ────────────────────────────────────────────────────
+
+@router.post("/v1/chat/completions")
+async def chat_completions(
+    request: Request,
+    team: Team = Depends(validate_team_token),
+    db: Session = Depends(get_db),
+):
+    """Chat completions passthrough."""
+    return await _proxy(request, team, db, "chat/completions")
+
+
+@router.post("/v1/responses")
+async def responses(
+    request: Request,
+    team: Team = Depends(validate_team_token),
+    db: Session = Depends(get_db),
+):
+    """OpenAI Responses API passthrough."""
+    return await _proxy(request, team, db, "responses")
