@@ -1,36 +1,37 @@
 """Configuration management."""
-import os
 import sys
 from typing import List
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 
 class Settings(BaseSettings):
-    """Application settings."""
+    """Application settings loaded from environment variables and .env file."""
     
-    provider_api_key: str = Field(default=os.getenv("PROVIDER_API_KEY", ""))
-    provider_base_url: str = Field(default=os.getenv("PROVIDER_BASE_URL", ""))
-    provider_timeout: float = Field(default=float(os.getenv("PROVIDER_TIMEOUT", "120.0")))
-    default_model: str = Field(default=os.getenv("DEFAULT_MODEL", "GPT-5-nano"))
-    allowed_models: str = Field(default=os.getenv("ALLOWED_MODELS", "GPT-5.1,GPT-5.1-Instant,GPT-5-nano,GPT-5-mini,GPT-5,Gemini-2.5-Flash,Gemini-2.5-Pro,Claude-Haiku-4.5,Claude-Sonnet-4.5,DeepSeek-R1,DeepSeek-V3.2"))
-    database_url: str = Field(default=os.getenv("DATABASE_URL", "sqlite:///./data/tokenrouter.db"))
-    host: str = Field(default=os.getenv("HOST", "0.0.0.0"))
-    port: int = Field(default=int(os.getenv("PORT", "8000")))
-    admin_password: str = Field(default=os.getenv("ADMIN_PASSWORD", ""))
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
     
-    # Registration settings
-    registration_enabled: bool = Field(default=os.getenv("REGISTRATION_ENABLED", "true").lower() == "true")
-    registration_access_codes: str = Field(default=os.getenv("REGISTRATION_ACCESS_CODES", ""))
-    allowed_email_domains: str = Field(default=os.getenv("ALLOWED_EMAIL_DOMAINS", "ln.hk,ln.edu.hk"))
-    default_registration_quota: int = Field(default=int(os.getenv("DEFAULT_REGISTRATION_QUOTA", "500000")))
-    public_api_url: str = Field(default=os.getenv("PUBLIC_API_URL", ""))
+    provider_api_key: str = Field(default="")
+    provider_base_url: str = Field(default="")
+    provider_timeout: float = Field(default=120.0)
+    default_model: str = Field(default="GPT-5-nano")
+    allowed_models: str = Field(default="GPT-5.1,GPT-5.1-Instant,GPT-5-nano,GPT-5-mini,GPT-5,Gemini-2.5-Flash,Gemini-2.5-Pro,Claude-Haiku-4.5,Claude-Sonnet-4.5,DeepSeek-R1,DeepSeek-V3.2,qwen3-coder-next:latest")
+    database_url: str = Field(default="sqlite:///./data/tokenrouter.db")
+    host: str = Field(default="127.0.0.1")
+    port: int = Field(default=8000)
+    admin_password: str = Field(default="")
     
-    # API Documentation settings
-    enable_api_docs: bool = Field(default=os.getenv("ENABLE_API_DOCS", "false").lower() == "true")
+    registration_enabled: bool = Field(default=True)
+    registration_access_codes: str = Field(default="")
+    allowed_email_domains: str = Field(default="ln.hk,ln.edu.hk")
+    default_registration_quota: int = Field(default=500000)
+    public_api_url: str = Field(default="")
     
-    class Config:
-        case_sensitive = False
+    enable_api_docs: bool = Field(default=False)
     
     @property
     def allowed_models_list(self) -> List[str]:
@@ -83,18 +84,18 @@ class Settings(BaseSettings):
         
         if missing:
             print("\n" + "="*60)
-            print("⚠️  ERROR: Required environment variables not set!")
+            print("  ERROR: Required configuration not set!")
             print("="*60)
             print(f"\nMissing variables: {', '.join(missing)}")
-            print("\nYou must set these environment variables before starting the app:")
-            print("\nExample:")
-            print("  export PROVIDER_API_KEY='your-api-key-here'")
-            print("  export PROVIDER_BASE_URL='https://api.poe.com/v1'")
-            print("  export ADMIN_PASSWORD='your-secure-password'")
-            print("  python run.py")
-            print("\nOr set them all at once:")
-            print("  export PROVIDER_API_KEY='your-key' PROVIDER_BASE_URL='https://api.poe.com/v1' ADMIN_PASSWORD='your-password'")
-            print("  python run.py")
+            print("\nTo configure the application:")
+            print("\n1. Copy .env.example to .env:")
+            print("   cp .env.example .env")
+            print("\n2. Edit .env and fill in your values:")
+            print("   PROVIDER_API_KEY=your-api-key-here")
+            print("   PROVIDER_BASE_URL=https://api.poe.com/v1")
+            print("   ADMIN_PASSWORD=your-secure-password")
+            print("\n3. Start the application:")
+            print("   python run.py")
             print("="*60 + "\n")
             sys.exit(1)
 

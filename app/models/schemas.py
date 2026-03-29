@@ -1,6 +1,6 @@
 """Pydantic schemas for request/response validation."""
 from datetime import datetime
-from typing import Optional, List, Any, Dict
+from typing import Optional, List, Any, Dict, Union
 from pydantic import BaseModel, Field, field_validator
 import re
 
@@ -69,18 +69,25 @@ class RequestLogResponse(BaseModel):
 # Chat completion schemas (OpenAI-compatible)
 class ChatMessage(BaseModel):
     """Chat message schema."""
+    model_config = {"extra": "allow"}
+    
     role: str
-    content: str
+    content: Union[str, List[Dict[str, Any]], None] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    tool_call_id: Optional[str] = None
 
 
 class ChatCompletionRequest(BaseModel):
-    """Chat completion request schema."""
+    """Chat completion request schema. Allows extra fields to pass through for full OpenAI compatibility."""
+    model_config = {"extra": "allow"}
+    
     model: str
     messages: List[ChatMessage]
-    temperature: Optional[float] = 1.0
+    temperature: Optional[float] = None
     max_tokens: Optional[int] = None
     stream: Optional[bool] = False
-    # Add other OpenAI parameters as needed
+    tools: Optional[List[Dict[str, Any]]] = None
+    tool_choice: Optional[Any] = None
 
 
 class UsageInfo(BaseModel):

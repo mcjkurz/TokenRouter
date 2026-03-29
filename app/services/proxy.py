@@ -1,6 +1,7 @@
 """Proxy service for forwarding requests to LLM provider."""
 import httpx
-from typing import Dict, Any
+import json
+from typing import Dict, Any, AsyncGenerator
 from fastapi import HTTPException, status
 
 from app.core.config import settings
@@ -13,6 +14,63 @@ class ProxyService:
         self.base_url = settings.provider_base_url
         self.api_key = settings.provider_api_key
         self.timeout = settings.provider_timeout
+    
+    async def forward_chat_completion_stream(
+        self, payload: Dict[str, Any]
+    ) -> AsyncGenerator[bytes, None]:
+        """
+        Forward streaming chat completion request to provider.
+        
+        Yields raw SSE chunks from the provider.
+        """
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        url = f"{self.base_url.rstrip('/')}/chat/completions"
+        
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with client.stream(
+                    "POST",
+                    url,
+                    json=payload,
+                    headers=headers
+                ) as response:
+                    if response.status_code != 200:
+                        error_text = await response.aread()
+                        error_detail = error_text.decode()
+                        try:
+                            error_json = json.loads(error_detail)
+                            error_detail = error_json.get("error", {}).get("message", error_detail)
+                        except:
+                            pass
+                        raise HTTPException(
+                            status_code=response.status_code,
+                            detail=f"Provider error: {error_detail}"
+                        )
+                    
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+        
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Request to provider timed out"
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Error connecting to provider: {str(e)}"
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Unexpected error: {str(e)}"
+            )
     
     async def forward_chat_completion(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """

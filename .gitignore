@@ -34,8 +34,5 @@ build/
 *.log
 logs/
 
-# Scripts with sensitive data
-restart.sh
-
 # Local logs
 tokenrouter.log

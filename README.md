@@ -4,68 +4,89 @@ TokenRouter is a lightweight, educational proxy service that lets you share one 
 
 ## Getting Started
 
-Install the dependencies:
+1. **Create and activate a virtual environment:**
 
 ```bash
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Set required environment variables and start the server:
+2. **Configure environment variables:**
 
 ```bash
-export PROVIDER_API_KEY='your-api-key-here'
-export PROVIDER_BASE_URL='https://api.poe.com/v1'
-export ADMIN_PASSWORD='your-secure-password'
-./start_foreground.sh
+cp .env.example .env
 ```
 
-**Helper Scripts:**
-- `./check_status.sh` - Check if server is running and responding
-- `./kill_ports.sh` - Kill any process using port 8000
-- `./start_foreground.sh` - Start server in foreground
-- `./start_background.sh` - Start server in background (logs to `logs/tokenrouter_YYYYMMDD_HHMMSS.log`)
+Edit `.env` with your configuration. Required settings:
 
-**Configuration:**
+```
+PROVIDER_API_KEY=your-api-key-here
+PROVIDER_BASE_URL=https://api.poe.com/v1
+ADMIN_PASSWORD=your-secure-password
+```
 
-Set environment variables to configure TokenRouter:
+3. **Start the server:**
 
 ```bash
-# Required variables (app will not start without these)
-export PROVIDER_API_KEY='your-provider-api-key'
-export PROVIDER_BASE_URL='https://api.poe.com/v1'
-export ADMIN_PASSWORD='your-secure-password'
-
-# Optional variables
-export ALLOWED_MODELS='GPT-5-nano,GPT-5-mini,...'       # Models available from your provider
-export DATABASE_URL='sqlite:///./data/tokenrouter.db'   # Database location
-export HOST='0.0.0.0'                                    # Server host
-export PORT='8000'                                       # Server port
-
-# Registration (optional - for self-service user registration)
-export REGISTRATION_ENABLED='true'                      # Enable user registration
-export REGISTRATION_ACCESS_CODES='code1,code2,code3'  # Comma-separated list of valid registration codes
-export ALLOWED_EMAIL_DOMAINS='stanford.edu,gmail.com'        # Allowed email domains
-export DEFAULT_REGISTRATION_QUOTA='500000'             # Default quota for new users
-export PUBLIC_API_URL='https://api.yourdomain.com/v1'     # Public API URL shown to users
+./start.sh
 ```
 
-TokenRouter is designed to be accessed remotely via a domain name (e.g., `api.yourdomain.com`) using Cloudflare Tunnel or a reverse proxy.
+## Scripts
+
+| Script | Description |
+|--------|-------------|
+| `./start.sh` | Start server in background (logs to `logs/tokenrouter_YYYYMMDD_HHMMSS.log`) |
+| `./stop.sh` | Stop the running server |
+| `./check_status.sh` | Check if server is running and responding |
+
+## Configuration
+
+All configuration is done through the `.env` file. See `.env.example` for all available options.
+
+**Required Settings:**
+
+| Variable | Description |
+|----------|-------------|
+| `PROVIDER_API_KEY` | API key for your upstream LLM provider |
+| `PROVIDER_BASE_URL` | Base URL for the provider API (e.g., `https://api.poe.com/v1`) |
+| `ADMIN_PASSWORD` | Password for admin panel authentication |
+
+**Optional Settings:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HOST` | `127.0.0.1` | Server bind address (use `0.0.0.0` for external access) |
+| `PORT` | `8000` | Server port |
+| `PUBLIC_API_URL` | `http://localhost:8000` | Public URL shown to users |
+| `DEFAULT_MODEL` | `GPT-5-nano` | Default model when none specified |
+| `ALLOWED_MODELS` | (see .env.example) | Comma-separated list of allowed models |
+| `PROVIDER_TIMEOUT` | `120.0` | Timeout for provider requests (seconds) |
+| `DATABASE_URL` | `sqlite:///./data/tokenrouter.db` | Database location |
+| `ENABLE_API_DOCS` | `false` | Enable Swagger docs at `/docs` |
+
+**Registration Settings:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REGISTRATION_ENABLED` | `true` | Enable user self-registration |
+| `REGISTRATION_ACCESS_CODES` | (empty) | Comma-separated access codes for registration |
+| `ALLOWED_EMAIL_DOMAINS` | `ln.hk,ln.edu.hk` | Allowed email domains |
+| `DEFAULT_REGISTRATION_QUOTA` | `500000` | Default token quota for new users |
 
 ## User Registration
 
 TokenRouter supports self-service user registration. Users can create their own accounts at `/register` if they have:
-- An email from an allowed domain (e.g., ln.hk, ln.edu.hk)
-- A valid registration access code (one of the codes configured in REGISTRATION_ACCESS_CODES)
+- An email from an allowed domain (configured in `ALLOWED_EMAIL_DOMAINS`)
+- A valid registration access code (if `REGISTRATION_ACCESS_CODES` is configured)
 
 ## Admin Panel
 
-Access the admin panel at `https://api.yourdomain.com/admin` to:
+Access the admin panel at `https://yourdomain.com/admin` to:
 - Create teams and assign tokens
 - Set and manage quotas
 - Monitor usage and view request logs
 - Reset usage counters
-
-Admin password must be set via `ADMIN_PASSWORD` environment variable.
 
 ## For Users
 
@@ -87,8 +108,6 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
-The service automatically tracks usage and enforces quotas.
-
 **Check Available Models:**
 ```bash
 curl https://api.yourdomain.com/v1/models
@@ -99,18 +118,17 @@ curl https://api.yourdomain.com/v1/models
 curl https://api.yourdomain.com/v1/usage/YOUR_TEAM_NAME
 ```
 
-## Cloudflare Setup
+## Deployment
 
-If using Cloudflare Tunnel, configure a firewall rule to allow API traffic:
+TokenRouter is designed to be accessed remotely via a domain name (e.g., `api.yourdomain.com`) using Cloudflare Tunnel or a reverse proxy.
 
-1. Cloudflare Dashboard → **Security** → **Firewall Rules**
-2. Create rule:
-   - **Field**: Hostname equals `api.yourdomain.com`
-   - **Action**: Allow or Skip
+**Cloudflare Setup:**
 
-## API Documentation
+If using Cloudflare Tunnel with Bot Protection enabled, you may need to configure a firewall rule to allow API traffic:
 
-Interactive API docs available at `https://api.yourdomain.com/docs` when the service is running.
+1. Cloudflare Dashboard → **Security** → **WAF**
+2. Create a rule to skip or allow requests to your API hostname
+3. Consider disabling "Browser Integrity Check" for `/v1/*` paths to allow programmatic API clients
 
 ---
 

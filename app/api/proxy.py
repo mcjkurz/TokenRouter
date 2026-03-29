@@ -1,5 +1,6 @@
 """Proxy API endpoint for chat completions."""
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -98,14 +99,26 @@ async def chat_completions(
             detail=error_msg
         )
     
-    # Streaming not supported in this simple implementation
-    if request.stream:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Streaming is not supported"
-        )
-    
     try:
+        # Handle streaming requests
+        if request.stream:
+            payload = request.model_dump(exclude_none=True)
+            payload["model"] = model_lower
+            
+            # Log the streaming request (we can't track exact tokens for streaming)
+            log_request(
+                db, team.id, model_lower, 0, 0, "streaming",
+                request_payload=payload
+            )
+            
+            return StreamingResponse(
+                proxy_service.forward_chat_completion_stream(payload),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                }
+            )
         # Forward request to provider
         payload = request.model_dump(exclude_none=True)
         # Use lowercase model in payload for consistency
