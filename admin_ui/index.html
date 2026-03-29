@@ -533,6 +533,14 @@
         .server-logs-tab .log-list {
             max-height: 500px;
         }
+
+        /* Checkbox styling */
+        .team-checkbox, #selectAll {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: #4299e1;
+        }
     </style>
 </head>
 <body>
@@ -601,7 +609,10 @@
                 <div class="tab-inner">
                     <div class="tab-header">
                         <h2 class="tab-title">Accounts</h2>
-                        <button class="btn btn-primary" onclick="showCreateModal()">+ Add Account</button>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <button id="bulkDeleteBtn" class="btn btn-danger" onclick="bulkDeleteSelected()" style="display: none;">Delete Selected (0)</button>
+                            <button class="btn btn-primary" onclick="showCreateModal()">+ Add Account</button>
+                        </div>
                     </div>
                     <div id="teamsTable">
                         <div class="loading">Loading accounts...</div>
@@ -805,10 +816,12 @@
                 
                 if (teams.length === 0) {
                     document.getElementById('teamsTable').innerHTML = '<p style="text-align: center; color: #718096; padding: 2rem;">No accounts yet. Create your first account!</p>';
+                    updateBulkActions();
                     return;
                 }
 
                 let html = '<table><thead><tr>';
+                html += '<th style="width: 40px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)" title="Select all"></th>';
                 html += '<th>Account Name</th>';
                 html += '<th>Email</th>';
                 html += '<th>Token</th>';
@@ -821,6 +834,7 @@
                 teams.forEach(team => {
                     const progressClass = team.usage_percentage > 90 ? 'high' : team.usage_percentage > 70 ? 'medium' : '';
                     html += '<tr>';
+                    html += `<td><input type="checkbox" class="team-checkbox" value="${team.id}" onchange="updateBulkActions()"></td>`;
                     html += `<td><strong>${team.name}</strong></td>`;
                     html += `<td><span style="color: #718096; font-size: 0.9rem;">${team.email || '-'}</span></td>`;
                     html += `<td>
@@ -849,10 +863,86 @@
 
                 html += '</tbody></table>';
                 document.getElementById('teamsTable').innerHTML = html;
+                updateBulkActions();
             } catch (error) {
                 console.error('Error loading teams:', error);
                 document.getElementById('teamsTable').innerHTML = '<div class="error">Failed to load teams</div>';
             }
+        }
+
+        function toggleSelectAll(checkbox) {
+            const checkboxes = document.querySelectorAll('.team-checkbox');
+            checkboxes.forEach(cb => cb.checked = checkbox.checked);
+            updateBulkActions();
+        }
+
+        function updateBulkActions() {
+            const checkboxes = document.querySelectorAll('.team-checkbox:checked');
+            const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+            
+            if (bulkDeleteBtn) {
+                if (checkboxes.length > 0) {
+                    bulkDeleteBtn.style.display = 'inline-block';
+                    bulkDeleteBtn.textContent = `Delete Selected (${checkboxes.length})`;
+                } else {
+                    bulkDeleteBtn.style.display = 'none';
+                }
+            }
+            
+            // Update "select all" checkbox state
+            const allCheckboxes = document.querySelectorAll('.team-checkbox');
+            const selectAll = document.getElementById('selectAll');
+            if (selectAll) {
+                selectAll.checked = allCheckboxes.length > 0 && checkboxes.length === allCheckboxes.length;
+                selectAll.indeterminate = checkboxes.length > 0 && checkboxes.length < allCheckboxes.length;
+            }
+        }
+
+        function getSelectedTeamIds() {
+            const checkboxes = document.querySelectorAll('.team-checkbox:checked');
+            return Array.from(checkboxes).map(cb => parseInt(cb.value));
+        }
+
+        async function bulkDeleteSelected() {
+            const ids = getSelectedTeamIds();
+            if (ids.length === 0) return;
+            
+            const confirmMsg = ids.length === 1 
+                ? 'Are you sure you want to delete this account? This will also delete all associated logs.'
+                : `Are you sure you want to delete ${ids.length} accounts? This will also delete all associated logs.`;
+            
+            if (!confirm(confirmMsg)) return;
+            
+            // Double confirmation for bulk delete
+            if (ids.length > 1) {
+                if (!confirm(`This will permanently delete ${ids.length} accounts. Type OK to confirm.`)) return;
+            }
+            
+            let deleted = 0;
+            let failed = 0;
+            
+            for (const id of ids) {
+                try {
+                    const response = await fetch(`/admin/teams/${id}`, {
+                        method: 'DELETE',
+                        headers: getHeaders()
+                    });
+                    if (response.ok) {
+                        deleted++;
+                    } else {
+                        failed++;
+                    }
+                } catch (error) {
+                    failed++;
+                }
+            }
+            
+            if (failed > 0) {
+                alert(`Deleted ${deleted} accounts. Failed to delete ${failed} accounts.`);
+            }
+            
+            loadStats();
+            loadTeams();
         }
 
         function showCreateModal() {
