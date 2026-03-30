@@ -2,7 +2,7 @@
 import logging
 import threading
 from typing import Dict, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import Header, HTTPException, status, Depends
 from sqlalchemy.orm import Session
 
@@ -109,7 +109,7 @@ def check_rate_limit(team: Team) -> None:
     Raises:
         HTTPException: If rate limit is exceeded
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     one_minute_ago = now - timedelta(minutes=1)
     
     with _rate_limit_lock:

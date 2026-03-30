@@ -1,11 +1,11 @@
 """Provider configuration and model routing from config.json."""
-import json
 import fnmatch
 import random
 import sys
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
+
+from app.core.config import get_raw_config
 
 
 def _is_wildcard_pattern(pattern: str) -> bool:
@@ -74,24 +74,14 @@ class Provider:
 
 
 class ProviderConfig:
-    def __init__(self, config_path: str = "config.json"):
-        self.config_path = Path(config_path)
+    def __init__(self):
         self.providers: Dict[str, Provider] = {}
         self.default_provider_name: Optional[str] = None
         self.default_model: Optional[str] = None
         self._load()
 
     def _load(self) -> None:
-        if not self.config_path.exists():
-            print(f"\n  ERROR: {self.config_path} not found!")
-            print("  Run: cp config.example.json config.json\n")
-            sys.exit(1)
-
-        try:
-            data = json.loads(self.config_path.read_text())
-        except json.JSONDecodeError as e:
-            print(f"\n  ERROR: Invalid JSON in {self.config_path}: {e}\n")
-            sys.exit(1)
+        data = get_raw_config()
 
         self.default_provider_name = data.get("default_provider")
         self.default_model = data.get("server", {}).get("default_model") or data.get("default_model")

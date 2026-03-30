@@ -108,8 +108,8 @@ class Settings:
         return access_code in self.registration_access_codes_list
 
 
-def _load_config(config_path: str = "config.json") -> Settings:
-    """Load settings from config.json."""
+def _load_config_file(config_path: str = "config.json") -> dict:
+    """Load and return the raw config.json data."""
     path = Path(config_path)
     
     if not path.exists():
@@ -126,11 +126,14 @@ def _load_config(config_path: str = "config.json") -> Settings:
         sys.exit(1)
     
     try:
-        data = json.loads(path.read_text())
+        return json.loads(path.read_text())
     except json.JSONDecodeError as e:
         print(f"\n  ERROR: Invalid JSON in {config_path}: {e}\n")
         sys.exit(1)
-    
+
+
+def _parse_settings(data: dict) -> Settings:
+    """Parse raw config data into Settings object."""
     # Parse registration config
     reg_data = data.get("registration", {})
     registration = RegistrationConfig(
@@ -175,4 +178,11 @@ def _load_config(config_path: str = "config.json") -> Settings:
     return settings
 
 
-settings = _load_config()
+# Load config once, expose both raw data and parsed settings
+_raw_config = _load_config_file()
+settings = _parse_settings(_raw_config)
+
+
+def get_raw_config() -> dict:
+    """Get the raw config data (for provider configuration)."""
+    return _raw_config
