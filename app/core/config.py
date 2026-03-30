@@ -35,6 +35,15 @@ class Settings(BaseSettings):
 
     # Logging
     log_payload_max_bytes: int = Field(default=8192, ge=0)
+
+    # Fallback charging when provider stream usage is missing
+    usage_missing_min_charge_tokens: int = Field(default=200, ge=0)
+    usage_missing_max_charge_tokens: int = Field(default=4000, ge=0)
+
+    @property
+    def usage_missing_charge_max_effective(self) -> int:
+        """Ensure effective max is always >= min."""
+        return max(self.usage_missing_max_charge_tokens, self.usage_missing_min_charge_tokens)
     
     @property
     def allowed_email_domains_list(self) -> List[str]:

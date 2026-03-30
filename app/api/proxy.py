@@ -7,12 +7,19 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db, SessionLocal
 from app.core.auth import validate_team_token, check_quota, check_rate_limit
 from app.core.providers import provider_config
 from app.models.database import Team
 from app.services.proxy import proxy_service
-from app.services.usage import log_request, reserve_quota, DEFAULT_TOKEN_RESERVATION
+from app.services.usage import (
+    log_request,
+    reserve_quota,
+    DEFAULT_TOKEN_RESERVATION,
+    estimate_tokens_from_payload,
+    estimate_tokens_from_chars,
+)
 
 logger = logging.getLogger("uvicorn.error")
 router = APIRouter()
@@ -95,6 +102,7 @@ async def _stream_with_usage_tracking(
     usage_data: Optional[Dict[str, Any]] = None
     error_occurred = False
     client_disconnected = False
+    output_char_count = 0
     sse_buffer = SSEBuffer()
     
     try:
@@ -108,8 +116,13 @@ async def _stream_with_usage_tracking(
                     if choices:
                         delta = choices[0].get("delta", {})
                         content = delta.get("content", "")
+                        if isinstance(content, str):
+                            output_char_count += len(content)
                         if content.startswith("[Error]"):
                             error_occurred = True
+                    output_text = event.get("output_text")
+                    if isinstance(output_text, str):
+                        output_char_count += len(output_text)
             
             yield chunk
     except (ConnectionError, asyncio.CancelledError):
@@ -135,21 +148,32 @@ async def _stream_with_usage_tracking(
                         reserved_tokens=reserved_tokens)
             logger.info(f"[stream] {model} usage: {inp} in, {out} out, {total} total")
         else:
-            # Fallback policy: provider did not return usage, so charge reserved amount.
+            # Fallback policy: estimate usage and clamp to a safe range.
+            estimated_input = estimate_tokens_from_payload(request_payload)
+            estimated_output = estimate_tokens_from_chars(output_char_count)
+            estimated_total = estimated_input + estimated_output
+            min_charge = settings.usage_missing_min_charge_tokens
+            max_charge = settings.usage_missing_charge_max_effective
+            estimated_charge = min(reserved_tokens, max(min_charge, min(estimated_total, max_charge)))
             log_request(
                 db,
                 team_id,
                 model,
                 0,
                 0,
-                "usage_missing_reserved",
-                "Provider stream completed without usage; charged reserved tokens",
+                "usage_missing_estimated",
+                (
+                    "Provider stream completed without usage; charged estimated tokens "
+                    f"(input={estimated_input}, output={estimated_output}, total={estimated_charge})"
+                ),
                 request_payload=request_payload,
-                tokens_for_quota=reserved_tokens,
+                tokens_for_quota=estimated_charge,
                 reserved_tokens=reserved_tokens,
             )
             logger.warning(
-                f"[stream] {model} missing usage; charged reserved {reserved_tokens} tokens"
+                f"[stream] {model} missing usage; estimated {estimated_input} in + "
+                f"{estimated_output} out -> charged {estimated_charge} tokens "
+                f"(clamp {min_charge}-{max_charge}, reserved {reserved_tokens})"
             )
     finally:
         db.close()

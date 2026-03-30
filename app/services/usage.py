@@ -1,5 +1,6 @@
 """Usage tracking service."""
 import json
+import math
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple
 from sqlalchemy import update, and_
@@ -34,6 +35,41 @@ def _truncate_json_payload(payload: Optional[Dict[str, Any]]) -> Optional[str]:
     kept = encoded[: max_bytes - len(marker_bytes)]
     kept_text = kept.decode("utf-8", errors="ignore")
     return f"{kept_text}{marker}"
+
+
+def estimate_tokens_from_chars(char_count: int) -> int:
+    """Estimate tokens from character count using ~4 chars/token."""
+    if char_count <= 0:
+        return 0
+    return math.ceil(char_count / 4)
+
+
+def estimate_tokens_from_payload(payload: Optional[Dict[str, Any]]) -> int:
+    """
+    Estimate input tokens by collecting string fields from payload.
+
+    This is intentionally simple and provider-agnostic for fallback charging.
+    """
+    if not payload:
+        return 0
+
+    chunks = []
+
+    def _walk(value: Any) -> None:
+        if isinstance(value, str):
+            if value:
+                chunks.append(value)
+            return
+        if isinstance(value, list):
+            for item in value:
+                _walk(item)
+            return
+        if isinstance(value, dict):
+            for nested in value.values():
+                _walk(nested)
+
+    _walk(payload)
+    return estimate_tokens_from_chars(sum(len(part) for part in chunks))
 
 
 def reserve_quota(db: Session, team_id: int, max_reserve_amount: int = DEFAULT_TOKEN_RESERVATION) -> Tuple[bool, int]:
