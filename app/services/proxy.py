@@ -1,4 +1,5 @@
 """Proxy service — forwards requests to upstream LLM providers."""
+import asyncio
 import httpx
 import json
 import logging
@@ -51,11 +52,18 @@ def _headers(provider: Provider) -> Dict[str, str]:
 class ProxyService:
     def __init__(self):
         self.timeout = settings.provider_timeout
+        self._client = httpx.AsyncClient(timeout=self.timeout)
+
+    async def close(self):
+        await self._client.aclose()
 
     # ── streaming ────────────────────────────────────────────────
 
     async def forward_stream(
-        self, payload: Dict[str, Any], endpoint: str
+        self,
+        payload: Dict[str, Any],
+        endpoint: str,
+        cancel_event: asyncio.Event,
     ) -> AsyncGenerator[bytes, None]:
         provider = _resolve(payload)
         url = f"{provider.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
@@ -64,24 +72,27 @@ class ProxyService:
         logger.info(f"[stream] {model} -> {provider.name} /{endpoint}")
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                async with client.stream("POST", url, json=payload, headers=_headers(provider)) as resp:
-                    if resp.status_code != 200:
-                        body = (await resp.aread()).decode()
-                        try:
-                            body = json.loads(body).get("error", {}).get("message", body)
-                        except Exception:
-                            pass
-                        msg = f"Provider '{provider.name}' returned {resp.status_code}: {body}"
-                        logger.error(f"[stream] {msg}")
-                        yield _create_error_chunk(msg, model)
-                        return
+            async with self._client.stream("POST", url, json=payload, headers=_headers(provider)) as resp:
+                if resp.status_code != 200:
+                    body = (await resp.aread()).decode()
+                    try:
+                        body = json.loads(body).get("error", {}).get("message", body)
+                    except Exception:
+                        pass
+                    msg = f"Provider '{provider.name}' returned {resp.status_code}: {body}"
+                    logger.error(f"[stream] {msg}")
+                    yield _create_error_chunk(msg, model)
+                    return
 
-                    chunks = 0
-                    async for chunk in resp.aiter_bytes():
-                        chunks += 1
-                        yield chunk
-                    logger.info(f"[stream] {model} done — {chunks} chunks")
+                chunks = 0
+                async for chunk in resp.aiter_bytes():
+                    if cancel_event.is_set():
+                        logger.info(f"[stream] {model} cancelled by client after {chunks} chunks")
+                        await resp.aclose()
+                        return
+                    chunks += 1
+                    yield chunk
+                logger.info(f"[stream] {model} done — {chunks} chunks")
 
         except httpx.TimeoutException:
             msg = f"Provider '{provider.name}' timed out"
@@ -110,19 +121,18 @@ class ProxyService:
         logger.info(f"[request] {model} -> {provider.name} /{endpoint}")
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.post(url, json=payload, headers=_headers(provider))
+            resp = await self._client.post(url, json=payload, headers=_headers(provider))
 
-                if resp.status_code != 200:
-                    detail = resp.text
-                    try:
-                        detail = resp.json().get("error", {}).get("message", detail)
-                    except Exception:
-                        pass
-                    logger.error(f"[request] {provider.name} returned {resp.status_code}: {detail}")
-                    raise HTTPException(status_code=resp.status_code, detail=f"Provider error: {detail}")
+            if resp.status_code != 200:
+                detail = resp.text
+                try:
+                    detail = resp.json().get("error", {}).get("message", detail)
+                except Exception:
+                    pass
+                logger.error(f"[request] {provider.name} returned {resp.status_code}: {detail}")
+                raise HTTPException(status_code=resp.status_code, detail=f"Provider error: {detail}")
 
-                return resp.json()
+            return resp.json()
 
         except httpx.TimeoutException:
             raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, detail=f"Provider '{provider.name}' timed out")

@@ -1,4 +1,5 @@
 """Proxy API endpoints — transparent passthrough to upstream providers."""
+import asyncio
 import json
 import logging
 from typing import Any, AsyncGenerator, Dict, Optional
@@ -23,6 +24,7 @@ async def _stream_with_usage_tracking(
     team_id: int,
     model: str,
     request_payload: Dict[str, Any],
+    cancel_event: asyncio.Event,
 ) -> AsyncGenerator[bytes, None]:
     """
     Wrap a streaming response to capture usage from the final chunk.
@@ -30,38 +32,46 @@ async def _stream_with_usage_tracking(
     Many providers (OpenAI, Anthropic) include usage stats in the last SSE chunk
     when stream_options.include_usage is set. This wrapper extracts that data
     and logs it after the stream completes.
+    
+    If the client disconnects, sets cancel_event so the upstream generator
+    can abort the provider connection promptly.
     """
     usage_data: Optional[Dict[str, Any]] = None
     error_occurred = False
+    client_disconnected = False
     
-    async for chunk in generator:
-        # Parse chunk to look for usage data
-        chunk_str = chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else chunk
-        
-        for line in chunk_str.split("\n"):
-            line = line.strip()
-            if not line.startswith("data: ") or line == "data: [DONE]":
-                continue
+    try:
+        async for chunk in generator:
+            chunk_str = chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else chunk
             
-            try:
-                data = json.loads(line[6:])
-                # Capture usage from any chunk that has it (typically the last one)
-                if "usage" in data and data["usage"]:
-                    usage_data = data["usage"]
-                # Check if this was an error chunk
-                choices = data.get("choices", [])
-                if choices:
-                    delta = choices[0].get("delta", {})
-                    content = delta.get("content", "")
-                    if content.startswith("[Error]"):
-                        error_occurred = True
-            except (json.JSONDecodeError, IndexError, KeyError):
-                pass
-        
-        yield chunk
+            for line in chunk_str.split("\n"):
+                line = line.strip()
+                if not line.startswith("data: ") or line == "data: [DONE]":
+                    continue
+                
+                try:
+                    data = json.loads(line[6:])
+                    if "usage" in data and data["usage"]:
+                        usage_data = data["usage"]
+                    choices = data.get("choices", [])
+                    if choices:
+                        delta = choices[0].get("delta", {})
+                        content = delta.get("content", "")
+                        if content.startswith("[Error]"):
+                            error_occurred = True
+                except (json.JSONDecodeError, IndexError, KeyError):
+                    pass
+            
+            yield chunk
+    except (ConnectionError, asyncio.CancelledError):
+        client_disconnected = True
+        cancel_event.set()
+        logger.info(f"[stream] {model} client disconnected — cancelling upstream")
     
-    # Stream complete - log usage
-    if error_occurred:
+    if client_disconnected:
+        log_request(db, team_id, model, 0, 0, "cancelled", "Client disconnected",
+                    request_payload=request_payload)
+    elif error_occurred:
         log_request(db, team_id, model, 0, 0, "error", "Streaming error",
                     request_payload=request_payload)
     elif usage_data:
@@ -74,7 +84,6 @@ async def _stream_with_usage_tracking(
         update_team_usage(db, team_id, total)
         logger.info(f"[stream] {model} usage: {inp} in, {out} out, {total} total")
     else:
-        # Provider didn't include usage - log as streaming without token counts
         log_request(db, team_id, model, 0, 0, "streaming",
                     request_payload=request_payload)
 
@@ -141,16 +150,17 @@ async def _proxy(request: Request, team: Team, db: Session, endpoint: str):
 
     try:
         if is_stream:
-            # Request usage in final chunk (supported by OpenAI, Anthropic, etc.)
             if "stream_options" not in payload:
                 payload["stream_options"] = {"include_usage": True}
             elif isinstance(payload.get("stream_options"), dict):
                 payload["stream_options"]["include_usage"] = True
             
+            cancel_event = asyncio.Event()
+            
             return StreamingResponse(
                 _stream_with_usage_tracking(
-                    proxy_service.forward_stream(payload, endpoint),
-                    db, team.id, model, payload
+                    proxy_service.forward_stream(payload, endpoint, cancel_event),
+                    db, team.id, model, payload, cancel_event,
                 ),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},

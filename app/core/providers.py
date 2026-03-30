@@ -1,6 +1,7 @@
 """Provider configuration and model routing from providers.json."""
 import json
 import fnmatch
+import random
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -49,6 +50,14 @@ class ProviderConfig:
                 models=cfg.get("models", []),
             )
 
+        _LOCAL_PREFIXES = ("http://localhost", "http://127.0.0.1")
+        for name, provider in self.providers.items():
+            is_local = any(provider.base_url.startswith(p) for p in _LOCAL_PREFIXES)
+            if not is_local and not provider.base_url.startswith("https://"):
+                print(f"\n  ERROR: Provider '{name}' base_url must start with https:// "
+                      f"(got '{provider.base_url}')\n")
+                sys.exit(1)
+
         if not self.providers:
             print("\n  ERROR: No providers defined in providers.json\n")
             sys.exit(1)
@@ -58,10 +67,13 @@ class ProviderConfig:
             sys.exit(1)
 
     def get_provider_for_model(self, model: str) -> Optional[Provider]:
-        """Return the first non-default provider whose patterns match, else default."""
-        for name, provider in self.providers.items():
-            if name != self.default_provider_name and provider.matches_model(model):
-                return provider
+        """Return a random matching non-default provider, else the default."""
+        candidates = [
+            p for name, p in self.providers.items()
+            if name != self.default_provider_name and p.matches_model(model)
+        ]
+        if candidates:
+            return random.choice(candidates)
         if self.default_provider_name:
             return self.providers.get(self.default_provider_name)
         return None

@@ -1,4 +1,5 @@
 """Authentication and token validation."""
+import logging
 import threading
 from typing import Dict, List
 from datetime import datetime, timedelta
@@ -7,6 +8,16 @@ from sqlalchemy.orm import Session
 
 from app.models.database import Team
 from app.core.database import get_db
+
+logger = logging.getLogger("uvicorn.error")
+
+
+def _obfuscate(s: str) -> str:
+    """Show only the first/last few characters of a secret string."""
+    if len(s) < 12:
+        return s[:2] + "***" + s[-2:] if len(s) > 4 else "***"
+    return s[:4] + "***" + s[-4:]
+
 
 # In-memory rate limiting tracker (thread-safe)
 _rate_limit_lock = threading.Lock()
@@ -47,6 +58,7 @@ def validate_team_token(
     team = db.query(Team).filter(Team.token == token).first()
     
     if not team:
+        logger.warning(f"[auth] Invalid token: {_obfuscate(token)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token"

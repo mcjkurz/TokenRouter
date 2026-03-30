@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.database import init_db
 from app.core.providers import provider_config
 from app.api import proxy, admin, registration
+from app.services.proxy import proxy_service
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -38,6 +39,12 @@ async def startup_event():
     logger.info("TokenRouter started")
     providers = ", ".join(provider_config.providers.keys())
     logger.info(f"Providers: {providers} (default: {provider_config.default_provider_name})")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await proxy_service.close()
+    logger.info("TokenRouter stopped")
 
 
 @app.get("/")

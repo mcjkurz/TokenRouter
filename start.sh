@@ -3,21 +3,14 @@
 
 cd "$(dirname "$0")"
 
-# Kill any existing TokenRouter process (by checking if it was started from this directory)
-SCRIPT_DIR="$(pwd)"
-EXISTING_PID=$(pgrep -f "python.*run\.py" | while read pid; do
-    # Check if this process was started from our directory
-    if lsof -p $pid 2>/dev/null | grep -q "$SCRIPT_DIR"; then
-        echo $pid
-    fi
-done)
-
+# Kill any existing process on port 8000
+EXISTING_PID=$(lsof -ti:8000 -sTCP:LISTEN 2>/dev/null)
 if [ -n "$EXISTING_PID" ]; then
-    echo "Stopping existing TokenRouter process (PID: $EXISTING_PID)..."
+    echo "Stopping existing process on port 8000 (PID: $EXISTING_PID)..."
     kill $EXISTING_PID 2>/dev/null
     sleep 1
     # Force kill if still running
-    if ps -p $EXISTING_PID >/dev/null 2>&1; then
+    if kill -0 $EXISTING_PID 2>/dev/null; then
         kill -9 $EXISTING_PID 2>/dev/null
         sleep 1
     fi
