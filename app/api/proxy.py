@@ -7,12 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.database import get_db, SessionLocal
 from app.core.auth import validate_team_token, check_quota, check_rate_limit
 from app.core.providers import provider_config
 from app.models.database import Team
 from app.services.proxy import proxy_service
-from app.services.usage import log_request, update_team_usage
+from app.services.usage import log_request
 
 logger = logging.getLogger("uvicorn.error")
 router = APIRouter()
@@ -20,7 +20,6 @@ router = APIRouter()
 
 async def _stream_with_usage_tracking(
     generator: AsyncGenerator[bytes, None],
-    db: Session,
     team_id: int,
     model: str,
     request_payload: Dict[str, Any],
@@ -35,6 +34,10 @@ async def _stream_with_usage_tracking(
     
     If the client disconnects, sets cancel_event so the upstream generator
     can abort the provider connection promptly.
+    
+    A dedicated DB session is created for the post-stream writes because the
+    request-scoped session from ``get_db`` is closed once the route handler
+    returns (before the streaming generator finishes).
     """
     usage_data: Optional[Dict[str, Any]] = None
     error_occurred = False
@@ -68,24 +71,27 @@ async def _stream_with_usage_tracking(
         cancel_event.set()
         logger.info(f"[stream] {model} client disconnected — cancelling upstream")
     
-    if client_disconnected:
-        log_request(db, team_id, model, 0, 0, "cancelled", "Client disconnected",
-                    request_payload=request_payload)
-    elif error_occurred:
-        log_request(db, team_id, model, 0, 0, "error", "Streaming error",
-                    request_payload=request_payload)
-    elif usage_data:
-        inp = usage_data.get("prompt_tokens", 0) or usage_data.get("input_tokens", 0)
-        out = usage_data.get("completion_tokens", 0) or usage_data.get("output_tokens", 0)
-        total = usage_data.get("total_tokens", 0) or (inp + out)
-        
-        log_request(db, team_id, model, inp, out, "success",
-                    request_payload=request_payload)
-        update_team_usage(db, team_id, total)
-        logger.info(f"[stream] {model} usage: {inp} in, {out} out, {total} total")
-    else:
-        log_request(db, team_id, model, 0, 0, "streaming",
-                    request_payload=request_payload)
+    db = SessionLocal()
+    try:
+        if client_disconnected:
+            log_request(db, team_id, model, 0, 0, "cancelled", "Client disconnected",
+                        request_payload=request_payload)
+        elif error_occurred:
+            log_request(db, team_id, model, 0, 0, "error", "Streaming error",
+                        request_payload=request_payload)
+        elif usage_data:
+            inp = usage_data.get("prompt_tokens", 0) or usage_data.get("input_tokens", 0)
+            out = usage_data.get("completion_tokens", 0) or usage_data.get("output_tokens", 0)
+            total = usage_data.get("total_tokens", 0) or (inp + out)
+            
+            log_request(db, team_id, model, inp, out, "success",
+                        request_payload=request_payload, tokens_for_quota=total)
+            logger.info(f"[stream] {model} usage: {inp} in, {out} out, {total} total")
+        else:
+            log_request(db, team_id, model, 0, 0, "streaming",
+                        request_payload=request_payload)
+    finally:
+        db.close()
 
 
 @router.get("/v1/models")
@@ -160,7 +166,7 @@ async def _proxy(request: Request, team: Team, db: Session, endpoint: str):
             return StreamingResponse(
                 _stream_with_usage_tracking(
                     proxy_service.forward_stream(payload, endpoint, cancel_event),
-                    db, team.id, model, payload, cancel_event,
+                    team.id, model, payload, cancel_event,
                 ),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
@@ -174,8 +180,8 @@ async def _proxy(request: Request, team: Team, db: Session, endpoint: str):
         total = usage.get("total_tokens", 0) or (inp + out)
 
         log_request(db, team.id, model, inp, out, "success",
-                    request_payload=payload, response_payload=response_data)
-        update_team_usage(db, team.id, total)
+                    request_payload=payload, response_payload=response_data,
+                    tokens_for_quota=total)
         return response_data
 
     except HTTPException:
@@ -195,6 +201,16 @@ async def chat_completions(
 ):
     """Chat completions passthrough."""
     return await _proxy(request, team, db, "chat/completions")
+
+
+@router.post("/v1/completions")
+async def completions(
+    request: Request,
+    team: Team = Depends(validate_team_token),
+    db: Session = Depends(get_db),
+):
+    """Legacy completions passthrough (used by autocomplete clients like Continue)."""
+    return await _proxy(request, team, db, "completions")
 
 
 @router.post("/v1/responses")
