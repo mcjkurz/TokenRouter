@@ -11,7 +11,7 @@ from app.core.providers import provider_config
 
 
 # Default USD reservation for requests where final cost is unknown upfront
-DEFAULT_USD_RESERVATION = 0.50  # $0.50 default reservation
+DEFAULT_USD_RESERVATION = 0.05  # $0.05 default reservation
 
 
 def _truncate_json_payload(payload: Optional[Dict[str, Any]]) -> Optional[str]:
