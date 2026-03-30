@@ -1,6 +1,6 @@
 # TokenRouter
 
-A lightweight proxy for sharing LLM API access with multiple users. Each user gets their own API token and quota, with all usage tracked automatically. Built for classroom settings where students need Python API access to LLMs without their own subscriptions.
+A lightweight proxy for sharing LLM API access with multiple users. Each user gets their own API token and USD budget, with usage and costs tracked automatically.
 
 ## Setup
 
@@ -9,64 +9,65 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env        # edit with your settings
-cp providers.example.json providers.json  # edit with your providers
+cp config.example.json config.json  # edit with your settings
 ```
 
 ## Configuration
 
-### `.env`
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `ADMIN_PASSWORD` | Yes | — | Password for the admin panel |
-| `DEFAULT_MODEL` | No | `default-model` | Default model shown in registration usage examples |
-| `PROVIDER_TIMEOUT` | No | `120.0` | Upstream request timeout (seconds) |
-| `LOG_PAYLOAD_MAX_BYTES` | No | `8192` | Integer max bytes stored per request/response payload (set `0` to disable payload logging) |
-| `USAGE_MISSING_MIN_CHARGE_TOKENS` | No | `200` | Minimum fallback tokens charged when streamed usage is missing |
-| `USAGE_MISSING_MAX_CHARGE_TOKENS` | No | `4000` | Maximum fallback tokens charged when streamed usage is missing |
-| `DATABASE_URL` | No | `sqlite:///./data/tokenrouter.db` | Database location |
-| `PUBLIC_API_URL` | No | — | Public URL shown to users |
-| `ENABLE_API_DOCS` | No | `false` | Enable Swagger docs at `/docs` |
-| `REGISTRATION_ENABLED` | No | `true` | Allow user self-registration |
-| `REGISTRATION_ACCESS_CODES` | No | — | Comma-separated access codes |
-| `ALLOWED_EMAIL_DOMAINS` | No | empty (allow all) | Comma-separated allowed email domains |
-| `DEFAULT_REGISTRATION_QUOTA` | No | `500000` | Default token quota for new users |
-
-### `providers.json`
+All configuration is in `config.json`:
 
 ```json
 {
+  "admin_password": "your-secure-password",
+  "registration": {
+    "enabled": true,
+    "access_codes": ["code1", "code2"],
+    "allowed_email_domains": ["example.com"],
+    "default_budget_usd": 5.00
+  },
+  "server": {
+    "public_api_url": "https://your-domain.com/v1",
+    "default_model": "gpt-4o",
+    "provider_timeout": 120.0
+  },
+  "pricing": {
+    "default_input_per_million": 1.00,
+    "default_output_per_million": 3.00
+  },
   "default_provider": "openai",
-  "default_model": "gpt-5",
   "providers": {
     "openai": {
       "base_url": "https://api.openai.com/v1",
       "api_key": "sk-your-key",
-      "models": ["gpt-5*", "o3-*", "o4-*"]
+      "input_per_million": 2.50,
+      "output_per_million": 10.00,
+      "models": {
+        "gpt-4o": {},
+        "gpt-4o-mini": {"input_per_million": 0.15, "output_per_million": 0.60}
+      }
     }
   }
 }
 ```
 
-- `default_model` — When a request uses model name `"default"` or `"default-model"`, it is replaced with this value before routing. This is useful for IDE tool use (e.g., Cursor) where the IDE may modify the request schema based on recognized model names; using `"default-model"` prevents this.
+### Pricing
+
+- Each provider has default pricing (`input_per_million`, `output_per_million`)
+- Individual models can override with custom pricing
+- `{}` means use provider default
 
 ## Running
 
 ```bash
-./start.sh          # start in background
-./stop.sh           # stop the server
+./start.sh   # start in background
+./stop.sh    # stop
 ```
 
-Or run directly:
-
-```bash
-python run.py
-```
+Or directly: `python run.py`
 
 ## Usage
 
-Users point any OpenAI-compatible client at the proxy:
+Point any OpenAI-compatible client at the proxy:
 
 ```python
 from openai import OpenAI
@@ -77,13 +78,21 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="claude-opus-4.5",
+    model="gpt-4o",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 ```
 
+Check your usage:
+
+```python
+import requests
+response = requests.get(f"https://your-domain.com/v1/usage/{API_KEY}")
+print(response.json())
+# {"budget_usd": 5.0, "used_usd": 0.12, "remaining_usd": 4.88, ...}
+```
+
 ## Admin
 
-Access the admin panel at `/admin` to manage users, tokens, quotas, and monitor usage.
-
-Users can self-register at `/register` (if enabled).
+- `/admin` — Manage users, budgets, view logs
+- `/register` — User self-registration (if enabled)

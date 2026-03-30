@@ -1,0 +1,47 @@
+{
+  "admin_password": "your-secure-password",
+  "registration": {
+    "enabled": true,
+    "access_codes": ["code1", "code2"],
+    "allowed_email_domains": ["example.com"],
+    "default_budget_usd": 5.00
+  },
+  "server": {
+    "public_api_url": "https://your-api-domain.com/v1",
+    "default_model": "gpt-4o",
+    "provider_timeout": 120.0,
+    "log_payload_max_bytes": 8192
+  },
+  "pricing": {
+    "default_input_per_million": 1.00,
+    "default_output_per_million": 3.00,
+    "fallback_min_charge_tokens": 200,
+    "fallback_max_charge_tokens": 4000
+  },
+  "default_provider": "ollama",
+  "providers": {
+    "ollama": {
+      "base_url": "http://localhost:11434/v1",
+      "api_key": null,
+      "input_per_million": 0,
+      "output_per_million": 0,
+      "models": {
+        "llama3:*": {},
+        "mistral:*": {},
+        "qwen*": {}
+      }
+    },
+    "openai": {
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "sk-your-openai-key",
+      "input_per_million": 2.50,
+      "output_per_million": 10.00,
+      "models": {
+        "gpt-4o": {},
+        "gpt-4o-mini": {"input_per_million": 0.15, "output_per_million": 0.60},
+        "gpt-4-turbo": {},
+        "gpt-3.5*": {"input_per_million": 0.50, "output_per_million": 1.50}
+      }
+    }
+  }
+}

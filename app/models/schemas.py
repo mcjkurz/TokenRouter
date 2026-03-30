@@ -9,20 +9,20 @@ import re
 class TeamBase(BaseModel):
     """Base team schema."""
     name: str
-    quota_tokens: int = Field(gt=0, description="Token quota for the team")
+    budget_usd: float = Field(gt=0, description="Budget in USD for the team")
     max_requests_per_minute: int = Field(default=30, gt=0, description="Rate limit per minute")
 
 
 class TeamCreate(TeamBase):
     """Schema for creating a team."""
-    email: Optional[str] = None  # Optional email address
+    email: Optional[str] = None
     token: Optional[str] = None  # Auto-generate if not provided
 
 
 class TeamUpdate(BaseModel):
     """Schema for updating a team."""
     name: Optional[str] = None
-    quota_tokens: Optional[int] = Field(None, gt=0)
+    budget_usd: Optional[float] = Field(None, gt=0)
     max_requests_per_minute: Optional[int] = Field(None, gt=0)
     is_active: Optional[bool] = None
 
@@ -32,7 +32,8 @@ class TeamResponse(TeamBase):
     id: int
     email: Optional[str] = None
     token: str
-    used_tokens: int
+    used_usd: float
+    total_tokens_used: int
     is_active: bool
     created_at: datetime
     
@@ -42,7 +43,7 @@ class TeamResponse(TeamBase):
 
 class TeamStats(TeamResponse):
     """Extended team schema with statistics."""
-    remaining_tokens: int
+    remaining_usd: float
     usage_percentage: float
     total_requests: int
 
@@ -57,10 +58,11 @@ class RequestLogResponse(BaseModel):
     input_tokens: int
     output_tokens: int
     total_tokens: int
+    cost_usd: float
     status: str
     error_message: Optional[str]
-    request_payload: Optional[str]  # JSON string
-    response_payload: Optional[str]  # JSON string
+    request_payload: Optional[str]
+    response_payload: Optional[str]
     
     class Config:
         from_attributes = True
@@ -114,7 +116,8 @@ class AdminStats(BaseModel):
     active_teams: int
     total_requests: int
     total_tokens_used: int
-    total_quota_tokens: int
+    total_budget_usd: float
+    total_used_usd: float
 
 
 # Registration schemas
@@ -128,17 +131,11 @@ class RegistrationRequest(BaseModel):
     @classmethod
     def validate_username(cls, v: str) -> str:
         """Validate that username contains only letters, numbers, and underscores."""
-        # Strip whitespace
         v = v.strip()
-        
-        # Check for spaces
         if ' ' in v:
             raise ValueError('Username cannot contain spaces')
-        
-        # Check alphanumeric (allows underscores)
         if not re.match(r'^[a-zA-Z0-9_]+$', v):
             raise ValueError('Username must contain only letters, numbers, and underscores')
-        
         return v
     
     @field_validator('email')
@@ -146,18 +143,14 @@ class RegistrationRequest(BaseModel):
     def validate_email_format(cls, v: str) -> str:
         """Basic email validation and sanitization."""
         v = v.strip().lower()
-        
-        # Basic format check (more thorough validation happens in the API)
         if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
             raise ValueError('Invalid email format')
-        
         return v
     
     @field_validator('access_code')
     @classmethod
     def validate_access_code(cls, v: str) -> str:
         """Sanitize access code."""
-        # Strip whitespace but don't modify the code itself
         return v.strip()
 
 
@@ -168,7 +161,6 @@ class RegistrationResponse(BaseModel):
     email: str
     api_key: str
     api_base_url: Optional[str] = None
-    quota_tokens: int
+    budget_usd: float
     warning: str
     usage_example: Optional[str] = None
-

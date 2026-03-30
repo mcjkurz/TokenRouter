@@ -1,8 +1,7 @@
-# Environment
+# Configuration (contains API keys and secrets)
+config.json
 .env
 *.env
-
-# Provider configuration (contains API keys)
 providers.json
 
 # Database and data

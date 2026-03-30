@@ -73,28 +73,28 @@ def validate_team_token(
     return team
 
 
-def check_quota(team: Team) -> None:
+def check_budget(team: Team) -> None:
     """
-    Check if team has remaining quota (pre-check only, not atomic).
+    Check if team has remaining budget (pre-check only, not atomic).
     
-    NOTE: This is a soft pre-check for fast rejection of clearly over-quota
-    requests. The actual quota enforcement happens via reserve_quota() in
+    NOTE: This is a soft pre-check for fast rejection of clearly over-budget
+    requests. The actual budget enforcement happens via reserve_budget() in
     the usage service, which uses atomic DB operations.
     
     Args:
         team: Team object
     
     Raises:
-        HTTPException: If quota is clearly exceeded
+        HTTPException: If budget is clearly exceeded
     """
-    if team.used_tokens >= team.quota_tokens:
+    if team.used_usd >= team.budget_usd:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
-                f"Token quota exceeded. "
-                f"Used: {team.used_tokens}/{team.quota_tokens} tokens. "
-                f"Remaining: 0 tokens. "
-                f"Check your usage at GET /v1/usage/{team.name}"
+                f"Budget exceeded. "
+                f"Used: ${team.used_usd:.2f}/${team.budget_usd:.2f}. "
+                f"Remaining: $0.00. "
+                f"Check your usage at GET /v1/usage/{team.token}"
             )
         )
 

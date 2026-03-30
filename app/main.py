@@ -14,8 +14,6 @@ from app.services.proxy import proxy_service
 
 logger = logging.getLogger("uvicorn.error")
 
-settings.validate_required_settings()
-
 app = FastAPI(
     title="TokenRouter",
     description="Lightweight proxy for sharing LLM accounts with token quotas",

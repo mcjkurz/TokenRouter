@@ -3,20 +3,24 @@
 
 cd "$(dirname "$0")"
 
-# Kill any existing process on port 8000
-EXISTING_PID=$(lsof -ti:8000 -sTCP:LISTEN 2>/dev/null)
+PORT=8001
+
+# Kill any existing process on the port
+EXISTING_PID=$(lsof -ti:$PORT -sTCP:LISTEN 2>/dev/null)
 if [ -n "$EXISTING_PID" ]; then
-    echo "Stopping existing process on port 8000 (PID: $EXISTING_PID)..."
+    echo "Stopping existing process on port $PORT (PID: $EXISTING_PID)..."
     kill $EXISTING_PID 2>/dev/null
     sleep 1
     # Force kill if still running
-    if kill -0 $EXISTING_PID 2>/dev/null; then
-        kill -9 $EXISTING_PID 2>/dev/null
-        sleep 1
-    fi
+    for pid in $EXISTING_PID; do
+        if kill -0 $pid 2>/dev/null; then
+            kill -9 $pid 2>/dev/null
+        fi
+    done
+    sleep 1
 fi
 
-echo "Starting TokenRouter..."
+echo "Starting TokenRouter on port $PORT..."
 
 # Check if virtual environment exists
 if [ ! -d "venv" ]; then
@@ -25,19 +29,11 @@ if [ ! -d "venv" ]; then
     exit 1
 fi
 
-# Check if .env file exists
-if [ ! -f ".env" ]; then
-    echo ".env file not found. Please run:"
-    echo "  cp .env.example .env"
-    echo "Then edit .env with your configuration."
-    exit 1
-fi
-
-# Check if providers.json exists
-if [ ! -f "providers.json" ]; then
-    echo "providers.json not found. Please run:"
-    echo "  cp providers.example.json providers.json"
-    echo "Then edit providers.json with your provider configuration."
+# Check if config.json exists
+if [ ! -f "config.json" ]; then
+    echo "config.json not found. Please run:"
+    echo "  cp config.example.json config.json"
+    echo "Then edit config.json with your configuration."
     exit 1
 fi
 

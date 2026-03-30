@@ -29,11 +29,9 @@ def validate_username(username: str) -> tuple[bool, str]:
     Validate username format.
     Returns (is_valid, error_message).
     """
-    # Check for spaces
     if ' ' in username:
         return False, "Username cannot contain spaces"
     
-    # Check alphanumeric (allows underscores)
     if not re.match(r'^[a-zA-Z0-9_]+$', username):
         return False, "Username must contain only letters, numbers, and underscores"
     
@@ -55,16 +53,14 @@ def register_user(
     
     Returns:
     - API key (save it, you won't see it again!)
-    - Account details with default quota
+    - Account details with default budget
     """
-    # Check if registration is enabled
     if not settings.registration_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Registration is currently disabled"
         )
     
-    # Validate access code
     if not settings.registration_access_codes_list:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -77,7 +73,6 @@ def register_user(
             detail="Invalid access code"
         )
     
-    # Validate username format (extra layer of validation beyond Pydantic)
     username_valid, username_error = validate_username(registration_data.username)
     if not username_valid:
         raise HTTPException(
@@ -85,21 +80,18 @@ def register_user(
             detail=username_error
         )
     
-    # Validate email format
     if not validate_email(registration_data.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid email format"
         )
     
-    # Validate email domain
     if not settings.is_email_domain_allowed(registration_data.email):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Email domain not allowed"
         )
     
-    # Check if username already exists
     existing_team = db.query(Team).filter(Team.name == registration_data.username).first()
     if existing_team:
         raise HTTPException(
@@ -107,7 +99,6 @@ def register_user(
             detail=f"Username '{registration_data.username}' is already taken"
         )
     
-    # Check if email already exists
     existing_email = db.query(Team).filter(Team.email == registration_data.email.lower()).first()
     if existing_email:
         raise HTTPException(
@@ -115,32 +106,28 @@ def register_user(
             detail=f"An account with email '{registration_data.email}' already exists"
         )
     
-    # Generate API key
     api_key = generate_token()
     
-    # Ensure token is unique (very unlikely collision, but check anyway)
     existing_token = db.query(Team).filter(Team.token == api_key).first()
     if existing_token:
-        # Generate a new one if collision (extremely rare)
         api_key = generate_token()
     
-    # Create the team/account with local time for created_at
     team = Team(
         name=registration_data.username,
-        email=registration_data.email.lower(),  # Store email in lowercase for consistency
+        email=registration_data.email.lower(),
         token=api_key,
-        quota_tokens=settings.default_registration_quota,
-        max_requests_per_minute=60,  # Default rate limit
-        used_tokens=0,
+        budget_usd=settings.default_budget_usd,
+        max_requests_per_minute=60,
+        used_usd=0.0,
+        total_tokens_used=0,
         is_active=True,
-        created_at=datetime.now()  # Use local time
+        created_at=datetime.now()
     )
     
     db.add(team)
     db.commit()
     db.refresh(team)
     
-    # Prepare API base URL and usage example
     api_base_url = settings.public_api_url if settings.public_api_url else None
     usage_example = None
     if api_base_url:
@@ -165,8 +152,7 @@ print(content)"""
         email=registration_data.email,
         api_key=api_key,
         api_base_url=api_base_url,
-        quota_tokens=settings.default_registration_quota,
-        warning="⚠️ IMPORTANT: Save this API key now! You won't be able to see it again.",
+        budget_usd=settings.default_budget_usd,
+        warning="IMPORTANT: Save this API key now! You won't be able to see it again.",
         usage_example=usage_example
     )
-

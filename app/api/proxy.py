@@ -9,14 +9,15 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db, SessionLocal
-from app.core.auth import validate_team_token, check_quota, check_rate_limit
+from app.core.auth import validate_team_token, check_budget, check_rate_limit
 from app.core.providers import provider_config
-from app.models.database import Team
+from app.models.database import Team, RequestLog
 from app.services.proxy import proxy_service
 from app.services.usage import (
     log_request,
-    reserve_quota,
-    DEFAULT_TOKEN_RESERVATION,
+    reserve_budget,
+    calculate_cost,
+    DEFAULT_USD_RESERVATION,
     estimate_tokens_from_payload,
     estimate_tokens_from_chars,
 )
@@ -41,7 +42,6 @@ class SSEBuffer:
         Add a chunk and return list of complete SSE data payloads (parsed JSON or raw).
         """
         self._buffer += chunk.decode("utf-8", errors="replace")
-        # Normalize CRLF to LF so event splitting works with both formats.
         self._buffer = self._buffer.replace("\r\n", "\n")
         events = []
         
@@ -69,7 +69,6 @@ class SSEBuffer:
             try:
                 events.append(json.loads(payload))
             except json.JSONDecodeError:
-                # Ignore non-JSON SSE events; forward stream bytes unchanged.
                 pass
         
         return events
@@ -81,7 +80,7 @@ async def _stream_with_usage_tracking(
     model: str,
     request_payload: Dict[str, Any],
     cancel_event: asyncio.Event,
-    reserved_tokens: int,
+    reserved_usd: float,
 ) -> AsyncGenerator[bytes, None]:
     """
     Wrap a streaming response to capture usage from the final chunk.
@@ -89,15 +88,6 @@ async def _stream_with_usage_tracking(
     Many providers (OpenAI, Anthropic) include usage stats in the last SSE chunk
     when stream_options.include_usage is set. This wrapper extracts that data
     and logs it after the stream completes.
-    
-    Uses SSEBuffer to handle JSON split across network chunk boundaries.
-    
-    If the client disconnects, sets cancel_event so the upstream generator
-    can abort the provider connection promptly.
-    
-    A dedicated DB session is created for the post-stream writes because the
-    request-scoped session from ``get_db`` is closed once the route handler
-    returns (before the streaming generator finishes).
     """
     usage_data: Optional[Dict[str, Any]] = None
     error_occurred = False
@@ -107,7 +97,6 @@ async def _stream_with_usage_tracking(
     
     try:
         async for chunk in generator:
-            # Parse SSE events using buffer (handles cross-chunk JSON)
             for event in sse_buffer.add_chunk(chunk):
                 if isinstance(event, dict):
                     if "usage" in event and event["usage"]:
@@ -134,46 +123,45 @@ async def _stream_with_usage_tracking(
     try:
         if client_disconnected:
             log_request(db, team_id, model, 0, 0, "cancelled", "Client disconnected",
-                        request_payload=request_payload, reserved_tokens=reserved_tokens)
+                        request_payload=request_payload, reserved_usd=reserved_usd)
         elif error_occurred:
             log_request(db, team_id, model, 0, 0, "error", "Streaming error",
-                        request_payload=request_payload, reserved_tokens=reserved_tokens)
+                        request_payload=request_payload, reserved_usd=reserved_usd)
         elif usage_data:
             inp = usage_data.get("prompt_tokens", 0) or usage_data.get("input_tokens", 0)
             out = usage_data.get("completion_tokens", 0) or usage_data.get("output_tokens", 0)
-            total = usage_data.get("total_tokens", 0) or (inp + out)
+            cost = calculate_cost(model, inp, out)
             
             log_request(db, team_id, model, inp, out, "success",
-                        request_payload=request_payload, tokens_for_quota=total,
-                        reserved_tokens=reserved_tokens)
-            logger.info(f"[stream] {model} usage: {inp} in, {out} out, {total} total")
+                        request_payload=request_payload, cost_usd=cost,
+                        reserved_usd=reserved_usd)
+            logger.info(f"[stream] {model} usage: {inp} in, {out} out, ${cost:.6f}")
         else:
-            # Fallback policy: estimate usage and clamp to a safe range.
+            # Fallback: estimate usage and calculate cost
             estimated_input = estimate_tokens_from_payload(request_payload)
             estimated_output = estimate_tokens_from_chars(output_char_count)
-            estimated_total = estimated_input + estimated_output
-            min_charge = settings.usage_missing_min_charge_tokens
-            max_charge = settings.usage_missing_charge_max_effective
-            estimated_charge = min(reserved_tokens, max(min_charge, min(estimated_total, max_charge)))
+            min_tokens = settings.usage_missing_min_charge_tokens
+            max_tokens = settings.usage_missing_charge_max_effective
+            
+            clamped_input = max(min_tokens // 2, min(estimated_input, max_tokens // 2))
+            clamped_output = max(min_tokens // 2, min(estimated_output, max_tokens // 2))
+            estimated_cost = calculate_cost(model, clamped_input, clamped_output)
+            
+            # Cap estimated cost at reserved amount
+            final_cost = min(estimated_cost, reserved_usd)
+            
             log_request(
-                db,
-                team_id,
-                model,
-                0,
-                0,
+                db, team_id, model,
+                clamped_input, clamped_output,
                 "usage_missing_estimated",
-                (
-                    "Provider stream completed without usage; charged estimated tokens "
-                    f"(input={estimated_input}, output={estimated_output}, total={estimated_charge})"
-                ),
+                f"Provider stream completed without usage; charged ${final_cost:.6f}",
                 request_payload=request_payload,
-                tokens_for_quota=estimated_charge,
-                reserved_tokens=reserved_tokens,
+                cost_usd=final_cost,
+                reserved_usd=reserved_usd,
             )
             logger.warning(
-                f"[stream] {model} missing usage; estimated {estimated_input} in + "
-                f"{estimated_output} out -> charged {estimated_charge} tokens "
-                f"(clamp {min_charge}-{max_charge}, reserved {reserved_tokens})"
+                f"[stream] {model} missing usage; estimated {clamped_input} in + "
+                f"{clamped_output} out -> charged ${final_cost:.6f}"
             )
     finally:
         db.close()
@@ -192,25 +180,27 @@ async def list_models():
     }
 
 
-@router.get("/v1/usage/{username}")
-async def get_usage(username: str, db: Session = Depends(get_db)):
-    """Get usage/quota for a user. No auth required."""
-    team = db.query(Team).filter(Team.name.ilike(username)).first()
+@router.get("/v1/usage/{api_key}")
+async def get_usage_by_key(api_key: str, db: Session = Depends(get_db)):
+    """
+    Get usage/budget for a team by API key. No auth required.
+    """
+    team = db.query(Team).filter(Team.token == api_key).first()
     if not team:
-        return {}
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Team not found for the provided API key"
+        )
 
-    from app.models.database import RequestLog
     total_requests = db.query(RequestLog).filter(RequestLog.team_id == team.id).count()
-    remaining = team.quota_tokens - team.used_tokens
 
     return {
         "team_name": team.name,
-        "quota_tokens": team.quota_tokens,
-        "used_tokens": team.used_tokens,
-        "remaining_tokens": remaining,
-        "usage_percentage": round((team.used_tokens / team.quota_tokens * 100) if team.quota_tokens else 0, 2),
+        "budget_usd": round(team.budget_usd, 2),
+        "used_usd": round(team.used_usd, 6),
+        "remaining_usd": round(team.remaining_usd, 6),
+        "total_tokens_used": team.total_tokens_used,
         "total_requests": total_requests,
-        "max_requests_per_minute": team.max_requests_per_minute,
         "is_active": team.is_active,
     }
 
@@ -221,16 +211,15 @@ async def _proxy(request: Request, team: Team, db: Session, endpoint: str):
     """
     Transparent passthrough.
     
-    Reads the raw JSON body, validates auth/quota/model,
+    Reads the raw JSON body, validates auth/budget/model,
     then forwards the entire payload as-is to the upstream provider.
     
-    Uses atomic quota reservation to prevent concurrent requests from
-    exceeding quota limits.
+    Uses atomic budget reservation to prevent concurrent requests from
+    exceeding budget limits.
     """
     check_rate_limit(team)
-    check_quota(team)  # Fast pre-check (actual enforcement via reserve_quota)
+    check_budget(team)  # Fast pre-check (actual enforcement via reserve_budget)
 
-    # Parse JSON body with proper error handling
     try:
         payload: Dict[str, Any] = await request.json()
     except json.JSONDecodeError as e:
@@ -255,15 +244,15 @@ async def _proxy(request: Request, team: Team, db: Session, endpoint: str):
         log_request(db, team.id, model, 0, 0, "error", error_msg, request_payload=payload)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=error_msg)
 
-    # Atomically reserve quota before making the request
-    reserved_ok, reserved_tokens = reserve_quota(db, team.id, DEFAULT_TOKEN_RESERVATION)
+    # Atomically reserve budget before making the request
+    reserved_ok, reserved_usd = reserve_budget(db, team.id, DEFAULT_USD_RESERVATION)
     if not reserved_ok:
         error_msg = (
-            f"Token quota exceeded. "
-            f"Not enough quota remaining for a new request. "
-            f"Check your usage at GET /v1/usage/{team.name}"
+            f"Budget exceeded. "
+            f"Remaining: ${team.remaining_usd:.2f}. "
+            f"Check your usage at GET /v1/usage/{team.token}"
         )
-        log_request(db, team.id, model, 0, 0, "quota_exceeded", error_msg, request_payload=payload)
+        log_request(db, team.id, model, 0, 0, "budget_exceeded", error_msg, request_payload=payload)
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail=error_msg)
 
     try:
@@ -278,7 +267,7 @@ async def _proxy(request: Request, team: Team, db: Session, endpoint: str):
             return StreamingResponse(
                 _stream_with_usage_tracking(
                     proxy_service.forward_stream(payload, endpoint, cancel_event),
-                    team.id, model, payload, cancel_event, reserved_tokens,
+                    team.id, model, payload, cancel_event, reserved_usd,
                 ),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
@@ -289,22 +278,20 @@ async def _proxy(request: Request, team: Team, db: Session, endpoint: str):
         usage = response_data.get("usage", {})
         inp = usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0)
         out = usage.get("completion_tokens", 0) or usage.get("output_tokens", 0)
-        total = usage.get("total_tokens", 0) or (inp + out)
+        cost = calculate_cost(model, inp, out)
 
         log_request(db, team.id, model, inp, out, "success",
                     request_payload=payload, response_payload=response_data,
-                    tokens_for_quota=total, reserved_tokens=reserved_tokens)
+                    cost_usd=cost, reserved_usd=reserved_usd)
         return response_data
 
     except HTTPException:
-        # Release reservation on HTTP errors (model not found, provider error, etc.)
         log_request(db, team.id, model, 0, 0, "error", "HTTP error",
-                    request_payload=payload, reserved_tokens=reserved_tokens)
+                    request_payload=payload, reserved_usd=reserved_usd)
         raise
     except Exception as e:
-        # Release reservation on unexpected errors
         log_request(db, team.id, model, 0, 0, "error", str(e),
-                    request_payload=payload, reserved_tokens=reserved_tokens)
+                    request_payload=payload, reserved_usd=reserved_usd)
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Internal error: {e}")
 
 

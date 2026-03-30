@@ -648,8 +648,8 @@
                     <input type="text" id="teamName" required>
                 </div>
                 <div class="form-group">
-                    <label for="quotaTokens">Token Quota</label>
-                    <input type="number" id="quotaTokens" min="1" required>
+                    <label for="budgetUsd">Budget (USD)</label>
+                    <input type="number" id="budgetUsd" min="0.01" step="0.01" required>
                 </div>
                 <div class="form-group" id="tokenGroup" style="display: none;">
                     <label for="teamToken">API Token</label>
@@ -844,11 +844,11 @@
                         </div>
                     </td>`;
                     html += `<td>
-                        <div>${team.used_tokens.toLocaleString()} / ${team.quota_tokens.toLocaleString()} tokens</div>
+                        <div>$${team.used_usd.toFixed(2)} / $${team.budget_usd.toFixed(2)}</div>
                         <div class="progress-bar">
                             <div class="progress-fill ${progressClass}" style="width: ${team.usage_percentage}%"></div>
                         </div>
-                        <small style="color: #718096;">${team.usage_percentage}% used</small>
+                        <small style="color: #718096;">${team.usage_percentage}% used (${team.total_tokens_used.toLocaleString()} tokens)</small>
                     </td>`;
                     html += `<td>${team.total_requests.toLocaleString()}</td>`;
                     html += `<td><span class="badge badge-${team.is_active ? 'active' : 'inactive'}">${team.is_active ? 'Active' : 'Inactive'}</span></td>`;
@@ -963,7 +963,7 @@
                 currentEditId = id;
                 document.getElementById('modalTitle').textContent = 'Edit Account';
                 document.getElementById('teamName').value = team.name;
-                document.getElementById('quotaTokens').value = team.quota_tokens;
+                document.getElementById('budgetUsd').value = team.budget_usd;
                 document.getElementById('tokenGroup').style.display = 'none';
                 document.getElementById('teamModal').classList.add('active');
             } catch (error) {
@@ -986,7 +986,7 @@
             e.preventDefault();
             
             const name = document.getElementById('teamName').value;
-            const quotaTokens = parseInt(document.getElementById('quotaTokens').value);
+            const budgetUsd = parseFloat(document.getElementById('budgetUsd').value);
             const token = document.getElementById('teamToken').value;
 
             try {
@@ -995,10 +995,10 @@
                     response = await fetch(`/admin/teams/${currentEditId}`, {
                         method: 'PUT',
                         headers: {...getHeaders(), 'Content-Type': 'application/json'},
-                        body: JSON.stringify({name, quota_tokens: quotaTokens})
+                        body: JSON.stringify({name, budget_usd: budgetUsd})
                     });
                 } else {
-                    const body = {name, quota_tokens: quotaTokens};
+                    const body = {name, budget_usd: budgetUsd};
                     if (token) body.token = token;
                     response = await fetch('/admin/teams', {
                         method: 'POST',
@@ -1090,6 +1090,7 @@
                 html += '<th>Timestamp</th>';
                 html += '<th>Model</th>';
                 html += '<th>Tokens</th>';
+                html += '<th>Cost</th>';
                 html += '<th>Status</th>';
                 html += '<th>Actions</th>';
                 html += '</tr></thead><tbody>';
@@ -1100,13 +1101,14 @@
                     html += '<tr>';
                     html += `<td><small>${date.toLocaleString()}</small></td>`;
                     html += `<td>${log.model}</td>`;
-                    html += `<td><small>In: ${log.input_tokens} | Out: ${log.output_tokens} | Total: ${log.total_tokens}</small></td>`;
+                    html += `<td><small>In: ${log.input_tokens} | Out: ${log.output_tokens}</small></td>`;
+                    html += `<td><small>$${(log.cost_usd || 0).toFixed(4)}</small></td>`;
                     html += `<td><span class="badge badge-${log.status === 'success' ? 'active' : 'inactive'}">${log.status}</span></td>`;
                     html += `<td><button class="btn btn-sm btn-toggle" onclick="toggleLogDetails('${logId}')">Show Details</button></td>`;
                     html += '</tr>';
                     
                     // Details row (hidden by default)
-                    html += `<tr id="${logId}" class="log-details"><td colspan="5">`;
+                    html += `<tr id="${logId}" class="log-details"><td colspan="6">`;
                     
                     // Request section
                     html += '<h4 style="margin-bottom: 0.5rem; font-size: 0.9rem; color: #2d3748;">📤 Request</h4>';

@@ -1,4 +1,4 @@
-"""Usage tracking service."""
+"""Usage tracking service with USD-based pricing."""
 import json
 import math
 from datetime import datetime
@@ -7,10 +7,11 @@ from sqlalchemy import update, and_
 from sqlalchemy.orm import Session
 from app.models.database import Team, RequestLog
 from app.core.config import settings
+from app.core.providers import provider_config
 
 
-# Default token reservation for requests where final usage is unknown upfront
-DEFAULT_TOKEN_RESERVATION = 50000
+# Default USD reservation for requests where final cost is unknown upfront
+DEFAULT_USD_RESERVATION = 0.50  # $0.50 default reservation
 
 
 def _truncate_json_payload(payload: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -72,54 +73,86 @@ def estimate_tokens_from_payload(payload: Optional[Dict[str, Any]]) -> int:
     return estimate_tokens_from_chars(sum(len(part) for part in chunks))
 
 
-def reserve_quota(db: Session, team_id: int, max_reserve_amount: int = DEFAULT_TOKEN_RESERVATION) -> Tuple[bool, int]:
+def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     """
-    Atomically reserve tokens from a team's quota.
+    Calculate USD cost based on model-specific or provider pricing.
     
-    Uses a conditional UPDATE to ensure reservation only succeeds when quota
-    remains, and adapts the reservation size to the team's remaining quota.
+    Pricing priority:
+    1. Model-specific pricing (if defined for the exact model or matching pattern)
+    2. Provider default pricing
+    3. Global default pricing (from config.pricing)
+    
+    Args:
+        model: Model name (used to find provider and pricing)
+        input_tokens: Number of input/prompt tokens
+        output_tokens: Number of output/completion tokens
+    
+    Returns:
+        Cost in USD (float)
+    """
+    provider = provider_config.get_provider_for_model(model)
+    
+    if provider:
+        # Get model-specific pricing or provider default
+        input_rate, output_rate = provider.get_pricing_for_model(model)
+    else:
+        # Fall back to global default pricing
+        input_rate = settings.pricing.default_input_per_million
+        output_rate = settings.pricing.default_output_per_million
+    
+    return (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
+
+
+def reserve_budget(
+    db: Session, 
+    team_id: int, 
+    max_reserve_usd: float = DEFAULT_USD_RESERVATION
+) -> Tuple[bool, float]:
+    """
+    Atomically reserve USD from a team's budget.
+    
+    Uses a conditional UPDATE to ensure reservation only succeeds when budget
+    remains, and adapts the reservation size to the team's remaining budget.
     This prevents race conditions and avoids falsely rejecting requests when
-    remaining quota is smaller than the default reservation size.
+    remaining budget is smaller than the default reservation size.
     
     Args:
         db: Database session
         team_id: Team ID
-        max_reserve_amount: Upper bound for reservation (actual may be lower)
+        max_reserve_usd: Upper bound for reservation in USD (actual may be lower)
     
     Returns:
-        Tuple of (success: bool, reserved_amount: int)
-        - success=True means tokens were reserved
-        - success=False means quota would be exceeded
+        Tuple of (success: bool, reserved_usd: float)
+        - success=True means USD was reserved
+        - success=False means budget would be exceeded
     """
-    # Retry once to handle races where remaining quota changes between read/update.
     for _ in range(2):
         team = db.query(Team).filter(Team.id == team_id).first()
         if not team:
-            return False, 0
+            return False, 0.0
 
-        remaining = max(0, team.quota_tokens - team.used_tokens)
+        remaining = max(0.0, team.budget_usd - team.used_usd)
         if remaining <= 0:
-            return False, 0
+            return False, 0.0
 
-        reserve_amount = min(max_reserve_amount, remaining)
+        reserve_amount = min(max_reserve_usd, remaining)
 
         result = db.execute(
             update(Team)
             .where(
                 and_(
                     Team.id == team_id,
-                    Team.used_tokens + reserve_amount <= Team.quota_tokens
+                    Team.used_usd + reserve_amount <= Team.budget_usd
                 )
             )
-            .values(used_tokens=Team.used_tokens + reserve_amount)
+            .values(used_usd=Team.used_usd + reserve_amount)
         )
         db.commit()
 
-        # rowcount == 1 means the update succeeded (quota check passed)
         if result.rowcount == 1:
             return True, reserve_amount
 
-    return False, 0
+    return False, 0.0
 
 
 def log_request(
@@ -132,19 +165,25 @@ def log_request(
     error_message: str = None,
     request_payload: Optional[Dict[str, Any]] = None,
     response_payload: Optional[Dict[str, Any]] = None,
-    tokens_for_quota: Optional[int] = None,
-    reserved_tokens: int = 0,
+    cost_usd: Optional[float] = None,
+    reserved_usd: float = 0.0,
 ) -> RequestLog:
     """
-    Log an API request and adjust quota based on actual vs reserved tokens.
+    Log an API request and adjust budget based on actual vs reserved USD.
 
-    When *reserved_tokens* > 0, this adjusts the quota to reflect actual usage:
-    - If tokens_for_quota > reserved: charges the difference
-    - If tokens_for_quota < reserved: refunds the difference
-    - If tokens_for_quota == 0 and reserved > 0: releases the full reservation
+    When *reserved_usd* > 0, this adjusts the budget to reflect actual cost:
+    - If cost_usd > reserved: charges the difference
+    - If cost_usd < reserved: refunds the difference
+    - If cost_usd == 0 and reserved > 0: releases the full reservation
+    
+    Also updates the team's total_tokens_used for statistics.
     """
     total_tokens = input_tokens + output_tokens
     model_lower = model.lower()
+
+    # Calculate cost if not provided
+    if cost_usd is None:
+        cost_usd = calculate_cost(model, input_tokens, output_tokens)
 
     request_json = _truncate_json_payload(request_payload)
     response_json = _truncate_json_payload(response_payload)
@@ -158,6 +197,7 @@ def log_request(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
+        cost_usd=cost_usd,
         status=status,
         error_message=error_message,
         request_payload=request_json,
@@ -166,18 +206,27 @@ def log_request(
 
     db.add(log)
 
-    # Adjust quota: actual usage minus what was already reserved
-    actual = tokens_for_quota if tokens_for_quota and tokens_for_quota > 0 else 0
-    adjustment = actual - reserved_tokens
+    # Adjust budget: actual cost minus what was already reserved
+    actual_cost = cost_usd if cost_usd and cost_usd > 0 else 0.0
+    adjustment = actual_cost - reserved_usd
+    
+    # Build update values - always update token count for successful requests
+    update_values = {}
     if adjustment != 0:
+        update_values["used_usd"] = Team.used_usd + adjustment
+    
+    # Update token count for stats (only for successful requests with tokens)
+    if total_tokens > 0 and status == "success":
+        update_values["total_tokens_used"] = Team.total_tokens_used + total_tokens
+    
+    if update_values:
         db.execute(
             update(Team)
             .where(Team.id == team_id)
-            .values(used_tokens=Team.used_tokens + adjustment)
+            .values(**update_values)
         )
 
     db.commit()
     db.refresh(log)
 
     return log
-

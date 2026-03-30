@@ -1,11 +1,11 @@
-"""Provider configuration and model routing from providers.json."""
+"""Provider configuration and model routing from config.json."""
 import json
 import fnmatch
 import random
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
-from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
 
 
 def _is_wildcard_pattern(pattern: str) -> bool:
@@ -14,18 +14,29 @@ def _is_wildcard_pattern(pattern: str) -> bool:
 
 
 @dataclass
+class ModelPricing:
+    """Pricing for a specific model."""
+    pattern: str
+    input_per_million: float
+    output_per_million: float
+
+
+@dataclass
 class Provider:
     name: str
     base_url: str
     api_key: Optional[str]
-    models: List[str]
+    model_patterns: List[str]  # Just the patterns for matching
+    input_per_million: float = 0.0  # Provider default
+    output_per_million: float = 0.0  # Provider default
+    model_pricing: Dict[str, ModelPricing] = field(default_factory=dict)  # Per-model overrides
 
     def matches_model_exact(self, model: str) -> bool:
         """Check for exact (non-wildcard) match."""
         model_lower = model.lower()
         return any(
             not _is_wildcard_pattern(p) and model_lower == p.lower()
-            for p in self.models
+            for p in self.model_patterns
         )
 
     def matches_model_wildcard(self, model: str) -> bool:
@@ -33,16 +44,37 @@ class Provider:
         model_lower = model.lower()
         return any(
             _is_wildcard_pattern(p) and fnmatch.fnmatch(model_lower, p.lower())
-            for p in self.models
+            for p in self.model_patterns
         )
 
     def matches_model(self, model: str) -> bool:
         """Check if model matches (exact or wildcard)."""
         return self.matches_model_exact(model) or self.matches_model_wildcard(model)
 
+    def get_pricing_for_model(self, model: str) -> Tuple[float, float]:
+        """
+        Get (input_per_million, output_per_million) for a specific model.
+        
+        Checks for model-specific pricing first, then falls back to provider default.
+        """
+        model_lower = model.lower()
+        
+        # Check exact matches first
+        for pattern, pricing in self.model_pricing.items():
+            if not _is_wildcard_pattern(pattern) and model_lower == pattern.lower():
+                return (pricing.input_per_million, pricing.output_per_million)
+        
+        # Check wildcard matches
+        for pattern, pricing in self.model_pricing.items():
+            if _is_wildcard_pattern(pattern) and fnmatch.fnmatch(model_lower, pattern.lower()):
+                return (pricing.input_per_million, pricing.output_per_million)
+        
+        # Fall back to provider default
+        return (self.input_per_million, self.output_per_million)
+
 
 class ProviderConfig:
-    def __init__(self, config_path: str = "providers.json"):
+    def __init__(self, config_path: str = "config.json"):
         self.config_path = Path(config_path)
         self.providers: Dict[str, Provider] = {}
         self.default_provider_name: Optional[str] = None
@@ -52,7 +84,7 @@ class ProviderConfig:
     def _load(self) -> None:
         if not self.config_path.exists():
             print(f"\n  ERROR: {self.config_path} not found!")
-            print("  Run: cp providers.example.json providers.json\n")
+            print("  Run: cp config.example.json config.json\n")
             sys.exit(1)
 
         try:
@@ -62,13 +94,34 @@ class ProviderConfig:
             sys.exit(1)
 
         self.default_provider_name = data.get("default_provider")
-        self.default_model = data.get("default_model")
+        self.default_model = data.get("server", {}).get("default_model") or data.get("default_model")
+        
         for name, cfg in data.get("providers", {}).items():
+            provider_input = cfg.get("input_per_million", 0.0)
+            provider_output = cfg.get("output_per_million", 0.0)
+            
+            # Parse models (dict: pattern -> pricing overrides or {})
+            models_cfg = cfg.get("models", {})
+            model_patterns: List[str] = []
+            model_pricing: Dict[str, ModelPricing] = {}
+            
+            for pattern, pricing_cfg in models_cfg.items():
+                model_patterns.append(pattern)
+                if isinstance(pricing_cfg, dict) and pricing_cfg:
+                    model_pricing[pattern] = ModelPricing(
+                        pattern=pattern,
+                        input_per_million=pricing_cfg.get("input_per_million", provider_input),
+                        output_per_million=pricing_cfg.get("output_per_million", provider_output),
+                    )
+            
             self.providers[name] = Provider(
                 name=name,
                 base_url=cfg.get("base_url", ""),
                 api_key=cfg.get("api_key"),
-                models=cfg.get("models", []),
+                model_patterns=model_patterns,
+                input_per_million=provider_input,
+                output_per_million=provider_output,
+                model_pricing=model_pricing,
             )
 
         _LOCAL_PREFIXES = ("http://localhost", "http://127.0.0.1")
@@ -80,7 +133,7 @@ class ProviderConfig:
                 sys.exit(1)
 
         if not self.providers:
-            print("\n  ERROR: No providers defined in providers.json\n")
+            print("\n  ERROR: No providers defined in config.json\n")
             sys.exit(1)
 
         if self.default_provider_name and self.default_provider_name not in self.providers:
@@ -125,7 +178,7 @@ class ProviderConfig:
         seen = set()
         out = []
         for p in self.providers.values():
-            for m in p.models:
+            for m in p.model_patterns:
                 if m.lower() not in seen:
                     seen.add(m.lower())
                     out.append(m)
@@ -136,7 +189,7 @@ class ProviderConfig:
         seen = set()
         out = []
         for p in self.providers.values():
-            for m in p.models:
+            for m in p.model_patterns:
                 if m.lower() not in seen:
                     seen.add(m.lower())
                     out.append((m, p.name))

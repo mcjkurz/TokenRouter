@@ -19,17 +19,15 @@ from app.models.schemas import (
     RequestLogResponse, AdminStats
 )
 
-# Get the project root directory (parent of 'app' folder)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LOGS_DIR = os.path.join(PROJECT_ROOT, "logs")
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-# Simple brute-force protection for admin login
 _login_attempts_lock = threading.Lock()
 _login_attempts: Dict[str, List[float]] = {}
 MAX_LOGIN_ATTEMPTS = 5
-LOGIN_WINDOW_SECONDS = 300  # 5 minutes
+LOGIN_WINDOW_SECONDS = 300
 
 
 def _check_login_rate_limit(client_ip: str) -> None:
@@ -41,7 +39,6 @@ def _check_login_rate_limit(client_ip: str) -> None:
         if client_ip not in _login_attempts:
             _login_attempts[client_ip] = []
         
-        # Remove old attempts
         _login_attempts[client_ip] = [
             t for t in _login_attempts[client_ip] if t > window_start
         ]
@@ -68,10 +65,8 @@ def verify_admin_password(
     """Verify admin password from header with brute-force protection."""
     client_ip = request.client.host if request.client else "unknown"
     
-    # Check rate limit before attempting verification
     _check_login_rate_limit(client_ip)
     
-    # Use timing-safe comparison to prevent timing attacks
     if not x_admin_password or not hmac.compare_digest(
         x_admin_password.encode('utf-8'),
         settings.admin_password.encode('utf-8')
@@ -98,15 +93,17 @@ def get_admin_stats(
     total_teams = db.query(Team).count()
     active_teams = db.query(Team).filter(Team.is_active == True).count()
     total_requests = db.query(RequestLog).count()
-    total_tokens_used = db.query(func.sum(Team.used_tokens)).scalar() or 0
-    total_quota_tokens = db.query(func.sum(Team.quota_tokens)).scalar() or 0
+    total_tokens_used = db.query(func.sum(Team.total_tokens_used)).scalar() or 0
+    total_budget_usd = db.query(func.sum(Team.budget_usd)).scalar() or 0.0
+    total_used_usd = db.query(func.sum(Team.used_usd)).scalar() or 0.0
     
     return AdminStats(
         total_teams=total_teams,
         active_teams=active_teams,
         total_requests=total_requests,
         total_tokens_used=total_tokens_used,
-        total_quota_tokens=total_quota_tokens
+        total_budget_usd=round(total_budget_usd, 2),
+        total_used_usd=round(total_used_usd, 6)
     )
 
 
@@ -123,19 +120,20 @@ def list_teams(
     result = []
     for team in teams:
         total_requests = db.query(RequestLog).filter(RequestLog.team_id == team.id).count()
-        remaining_tokens = max(0, team.quota_tokens - team.used_tokens)
-        usage_percentage = (team.used_tokens / team.quota_tokens * 100) if team.quota_tokens > 0 else 0
+        remaining_usd = max(0.0, team.budget_usd - team.used_usd)
+        usage_percentage = (team.used_usd / team.budget_usd * 100) if team.budget_usd > 0 else 0
         
         result.append(TeamStats(
             id=team.id,
             name=team.name,
             email=team.email,
             token=team.token,
-            quota_tokens=team.quota_tokens,
-            used_tokens=team.used_tokens,
+            budget_usd=team.budget_usd,
+            used_usd=team.used_usd,
+            total_tokens_used=team.total_tokens_used,
             is_active=team.is_active,
             created_at=team.created_at,
-            remaining_tokens=remaining_tokens,
+            remaining_usd=round(remaining_usd, 6),
             usage_percentage=round(usage_percentage, 2),
             total_requests=total_requests
         ))
@@ -159,19 +157,20 @@ def get_team(
         )
     
     total_requests = db.query(RequestLog).filter(RequestLog.team_id == team.id).count()
-    remaining_tokens = max(0, team.quota_tokens - team.used_tokens)
-    usage_percentage = (team.used_tokens / team.quota_tokens * 100) if team.quota_tokens > 0 else 0
+    remaining_usd = max(0.0, team.budget_usd - team.used_usd)
+    usage_percentage = (team.used_usd / team.budget_usd * 100) if team.budget_usd > 0 else 0
     
     return TeamStats(
         id=team.id,
         name=team.name,
         email=team.email,
         token=team.token,
-        quota_tokens=team.quota_tokens,
-        used_tokens=team.used_tokens,
+        budget_usd=team.budget_usd,
+        used_usd=team.used_usd,
+        total_tokens_used=team.total_tokens_used,
         is_active=team.is_active,
         created_at=team.created_at,
-        remaining_tokens=remaining_tokens,
+        remaining_usd=round(remaining_usd, 6),
         usage_percentage=round(usage_percentage, 2),
         total_requests=total_requests
     )
@@ -184,7 +183,6 @@ def create_team(
     authenticated: bool = Depends(verify_admin_password)
 ):
     """Create a new team."""
-    # Check if team name already exists
     existing_team = db.query(Team).filter(Team.name == team_data.name).first()
     if existing_team:
         raise HTTPException(
@@ -192,7 +190,6 @@ def create_team(
             detail=f"Team with name '{team_data.name}' already exists"
         )
     
-    # Check if email already exists (if email provided)
     if team_data.email:
         existing_email = db.query(Team).filter(Team.email == team_data.email.lower()).first()
         if existing_email:
@@ -201,10 +198,8 @@ def create_team(
                 detail=f"Team with email '{team_data.email}' already exists"
             )
     
-    # Generate token if not provided
     token = team_data.token if team_data.token else generate_token()
     
-    # Check if token already exists
     existing_token = db.query(Team).filter(Team.token == token).first()
     if existing_token:
         raise HTTPException(
@@ -212,16 +207,16 @@ def create_team(
             detail="Token already exists"
         )
     
-    # Create team with local time for created_at
     team = Team(
         name=team_data.name,
         email=team_data.email.lower() if team_data.email else None,
         token=token,
-        quota_tokens=team_data.quota_tokens,
+        budget_usd=team_data.budget_usd,
         max_requests_per_minute=team_data.max_requests_per_minute,
-        used_tokens=0,
+        used_usd=0.0,
+        total_tokens_used=0,
         is_active=True,
-        created_at=datetime.now()  # Use local time
+        created_at=datetime.now()
     )
     
     db.add(team)
@@ -247,9 +242,7 @@ def update_team(
             detail=f"Team with ID {team_id} not found"
         )
     
-    # Update fields
     if team_data.name is not None:
-        # Check if new name conflicts with existing team
         existing = db.query(Team).filter(
             Team.name == team_data.name,
             Team.id != team_id
@@ -261,8 +254,8 @@ def update_team(
             )
         team.name = team_data.name
     
-    if team_data.quota_tokens is not None:
-        team.quota_tokens = team_data.quota_tokens
+    if team_data.budget_usd is not None:
+        team.budget_usd = team_data.budget_usd
     
     if team_data.max_requests_per_minute is not None:
         team.max_requests_per_minute = team_data.max_requests_per_minute
@@ -301,7 +294,7 @@ def reset_team_usage(
     db: Session = Depends(get_db),
     authenticated: bool = Depends(verify_admin_password)
 ):
-    """Reset team's token usage counter."""
+    """Reset team's usage counter (USD spent and tokens used)."""
     team = db.query(Team).filter(Team.id == team_id).first()
     
     if not team:
@@ -310,7 +303,8 @@ def reset_team_usage(
             detail=f"Team with ID {team_id} not found"
         )
     
-    team.used_tokens = 0
+    team.used_usd = 0.0
+    team.total_tokens_used = 0
     db.commit()
     db.refresh(team)
     
@@ -362,7 +356,6 @@ def list_server_logs(
                 "modified": stat.st_mtime
             })
     
-    # Sort by modified time, newest first
     log_files.sort(key=lambda x: x["modified"], reverse=True)
     return log_files
 
@@ -373,7 +366,6 @@ def get_server_log_content(
     authenticated: bool = Depends(verify_admin_password)
 ):
     """Get the content of a specific server log file."""
-    # Security: prevent directory traversal
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -402,4 +394,3 @@ def get_server_log_content(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error reading log file: {str(e)}"
         )
-

@@ -1,13 +1,15 @@
 #!/bin/bash
 # Stop TokenRouter
 
+PORT=8001
+
 echo "Stopping TokenRouter..."
 
-# Find process listening on port 8000
-PID=$(lsof -ti:8000 -sTCP:LISTEN 2>/dev/null)
+# Find process listening on the port
+PID=$(lsof -ti:$PORT -sTCP:LISTEN 2>/dev/null)
 
 if [ -z "$PID" ]; then
-    echo "No TokenRouter process found on port 8000"
+    echo "No TokenRouter process found on port $PORT"
 else
     echo "Killing process $PID..."
     kill -9 $PID
