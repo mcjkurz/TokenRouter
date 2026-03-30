@@ -22,6 +22,7 @@ cp providers.example.json providers.json  # edit with your providers
 | `ADMIN_PASSWORD` | Yes | — | Password for the admin panel |
 | `DEFAULT_MODEL` | No | `gpt-5.4` | Default model when none specified |
 | `PROVIDER_TIMEOUT` | No | `120.0` | Upstream request timeout (seconds) |
+| `LOG_PAYLOAD_MAX_BYTES` | No | `8192` | Integer max bytes stored per request/response payload (set `0` to disable payload logging) |
 | `DATABASE_URL` | No | `sqlite:///./data/tokenrouter.db` | Database location |
 | `PUBLIC_API_URL` | No | — | Public URL shown to users |
 | `ENABLE_API_DOCS` | No | `false` | Enable Swagger docs at `/docs` |

@@ -12,10 +12,60 @@ from app.core.auth import validate_team_token, check_quota, check_rate_limit
 from app.core.providers import provider_config
 from app.models.database import Team
 from app.services.proxy import proxy_service
-from app.services.usage import log_request
+from app.services.usage import log_request, reserve_quota, DEFAULT_TOKEN_RESERVATION
 
 logger = logging.getLogger("uvicorn.error")
 router = APIRouter()
+
+
+class SSEBuffer:
+    """
+    Buffer for parsing SSE streams that may split JSON across chunk boundaries.
+    
+    SSE format: "data: <json>\n\n" but network chunks can split anywhere.
+    This buffer accumulates data and yields complete SSE events.
+    """
+    
+    def __init__(self):
+        self._buffer = ""
+    
+    def add_chunk(self, chunk: bytes) -> list:
+        """
+        Add a chunk and return list of complete SSE data payloads (parsed JSON or raw).
+        """
+        self._buffer += chunk.decode("utf-8", errors="replace")
+        # Normalize CRLF to LF so event splitting works with both formats.
+        self._buffer = self._buffer.replace("\r\n", "\n")
+        events = []
+        
+        while "\n\n" in self._buffer:
+            event_end = self._buffer.index("\n\n")
+            event_block = self._buffer[:event_end]
+            self._buffer = self._buffer[event_end + 2:]
+            
+            data_lines = []
+            for raw_line in event_block.split("\n"):
+                line = raw_line.strip()
+                if not line.startswith("data:"):
+                    continue
+                data_str = line[5:]
+                if data_str.startswith(" "):
+                    data_str = data_str[1:]
+                data_lines.append(data_str)
+
+            if not data_lines:
+                continue
+
+            payload = "\n".join(data_lines)
+            if payload == "[DONE]":
+                continue
+            try:
+                events.append(json.loads(payload))
+            except json.JSONDecodeError:
+                # Ignore non-JSON SSE events; forward stream bytes unchanged.
+                pass
+        
+        return events
 
 
 async def _stream_with_usage_tracking(
@@ -24,6 +74,7 @@ async def _stream_with_usage_tracking(
     model: str,
     request_payload: Dict[str, Any],
     cancel_event: asyncio.Event,
+    reserved_tokens: int,
 ) -> AsyncGenerator[bytes, None]:
     """
     Wrap a streaming response to capture usage from the final chunk.
@@ -31,6 +82,8 @@ async def _stream_with_usage_tracking(
     Many providers (OpenAI, Anthropic) include usage stats in the last SSE chunk
     when stream_options.include_usage is set. This wrapper extracts that data
     and logs it after the stream completes.
+    
+    Uses SSEBuffer to handle JSON split across network chunk boundaries.
     
     If the client disconnects, sets cancel_event so the upstream generator
     can abort the provider connection promptly.
@@ -42,28 +95,21 @@ async def _stream_with_usage_tracking(
     usage_data: Optional[Dict[str, Any]] = None
     error_occurred = False
     client_disconnected = False
+    sse_buffer = SSEBuffer()
     
     try:
         async for chunk in generator:
-            chunk_str = chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else chunk
-            
-            for line in chunk_str.split("\n"):
-                line = line.strip()
-                if not line.startswith("data: ") or line == "data: [DONE]":
-                    continue
-                
-                try:
-                    data = json.loads(line[6:])
-                    if "usage" in data and data["usage"]:
-                        usage_data = data["usage"]
-                    choices = data.get("choices", [])
+            # Parse SSE events using buffer (handles cross-chunk JSON)
+            for event in sse_buffer.add_chunk(chunk):
+                if isinstance(event, dict):
+                    if "usage" in event and event["usage"]:
+                        usage_data = event["usage"]
+                    choices = event.get("choices", [])
                     if choices:
                         delta = choices[0].get("delta", {})
                         content = delta.get("content", "")
                         if content.startswith("[Error]"):
                             error_occurred = True
-                except (json.JSONDecodeError, IndexError, KeyError):
-                    pass
             
             yield chunk
     except (ConnectionError, asyncio.CancelledError):
@@ -75,21 +121,36 @@ async def _stream_with_usage_tracking(
     try:
         if client_disconnected:
             log_request(db, team_id, model, 0, 0, "cancelled", "Client disconnected",
-                        request_payload=request_payload)
+                        request_payload=request_payload, reserved_tokens=reserved_tokens)
         elif error_occurred:
             log_request(db, team_id, model, 0, 0, "error", "Streaming error",
-                        request_payload=request_payload)
+                        request_payload=request_payload, reserved_tokens=reserved_tokens)
         elif usage_data:
             inp = usage_data.get("prompt_tokens", 0) or usage_data.get("input_tokens", 0)
             out = usage_data.get("completion_tokens", 0) or usage_data.get("output_tokens", 0)
             total = usage_data.get("total_tokens", 0) or (inp + out)
             
             log_request(db, team_id, model, inp, out, "success",
-                        request_payload=request_payload, tokens_for_quota=total)
+                        request_payload=request_payload, tokens_for_quota=total,
+                        reserved_tokens=reserved_tokens)
             logger.info(f"[stream] {model} usage: {inp} in, {out} out, {total} total")
         else:
-            log_request(db, team_id, model, 0, 0, "streaming",
-                        request_payload=request_payload)
+            # Fallback policy: provider did not return usage, so charge reserved amount.
+            log_request(
+                db,
+                team_id,
+                model,
+                0,
+                0,
+                "usage_missing_reserved",
+                "Provider stream completed without usage; charged reserved tokens",
+                request_payload=request_payload,
+                tokens_for_quota=reserved_tokens,
+                reserved_tokens=reserved_tokens,
+            )
+            logger.warning(
+                f"[stream] {model} missing usage; charged reserved {reserved_tokens} tokens"
+            )
     finally:
         db.close()
 
@@ -138,11 +199,27 @@ async def _proxy(request: Request, team: Team, db: Session, endpoint: str):
     
     Reads the raw JSON body, validates auth/quota/model,
     then forwards the entire payload as-is to the upstream provider.
+    
+    Uses atomic quota reservation to prevent concurrent requests from
+    exceeding quota limits.
     """
     check_rate_limit(team)
-    check_quota(team)
+    check_quota(team)  # Fast pre-check (actual enforcement via reserve_quota)
 
-    payload: Dict[str, Any] = await request.json()
+    # Parse JSON body with proper error handling
+    try:
+        payload: Dict[str, Any] = await request.json()
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid JSON in request body: {e}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to parse request body: {e}"
+        )
+
     model = provider_config.resolve_model(payload.get("model", ""))
     payload["model"] = model
     is_stream = payload.get("stream", False)
@@ -153,6 +230,17 @@ async def _proxy(request: Request, team: Team, db: Session, endpoint: str):
         error_msg = f"Model '{model}' not available. See GET /v1/models"
         log_request(db, team.id, model, 0, 0, "error", error_msg, request_payload=payload)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=error_msg)
+
+    # Atomically reserve quota before making the request
+    reserved_ok, reserved_tokens = reserve_quota(db, team.id, DEFAULT_TOKEN_RESERVATION)
+    if not reserved_ok:
+        error_msg = (
+            f"Token quota exceeded. "
+            f"Not enough quota remaining for a new request. "
+            f"Check your usage at GET /v1/usage/{team.name}"
+        )
+        log_request(db, team.id, model, 0, 0, "quota_exceeded", error_msg, request_payload=payload)
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail=error_msg)
 
     try:
         if is_stream:
@@ -166,7 +254,7 @@ async def _proxy(request: Request, team: Team, db: Session, endpoint: str):
             return StreamingResponse(
                 _stream_with_usage_tracking(
                     proxy_service.forward_stream(payload, endpoint, cancel_event),
-                    team.id, model, payload, cancel_event,
+                    team.id, model, payload, cancel_event, reserved_tokens,
                 ),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
@@ -181,13 +269,18 @@ async def _proxy(request: Request, team: Team, db: Session, endpoint: str):
 
         log_request(db, team.id, model, inp, out, "success",
                     request_payload=payload, response_payload=response_data,
-                    tokens_for_quota=total)
+                    tokens_for_quota=total, reserved_tokens=reserved_tokens)
         return response_data
 
     except HTTPException:
+        # Release reservation on HTTP errors (model not found, provider error, etc.)
+        log_request(db, team.id, model, 0, 0, "error", "HTTP error",
+                    request_payload=payload, reserved_tokens=reserved_tokens)
         raise
     except Exception as e:
-        log_request(db, team.id, model, 0, 0, "error", str(e), request_payload=payload)
+        # Release reservation on unexpected errors
+        log_request(db, team.id, model, 0, 0, "error", str(e),
+                    request_payload=payload, reserved_tokens=reserved_tokens)
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Internal error: {e}")
 
 

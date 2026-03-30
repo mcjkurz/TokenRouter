@@ -75,15 +75,18 @@ def validate_team_token(
 
 def check_quota(team: Team) -> None:
     """
-    Check if team has remaining quota.
+    Check if team has remaining quota (pre-check only, not atomic).
+    
+    NOTE: This is a soft pre-check for fast rejection of clearly over-quota
+    requests. The actual quota enforcement happens via reserve_quota() in
+    the usage service, which uses atomic DB operations.
     
     Args:
         team: Team object
     
     Raises:
-        HTTPException: If quota is exceeded
+        HTTPException: If quota is clearly exceeded
     """
-    remaining = team.quota_tokens - team.used_tokens
     if team.used_tokens >= team.quota_tokens:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

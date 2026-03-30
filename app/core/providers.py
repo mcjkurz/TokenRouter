@@ -67,15 +67,24 @@ class ProviderConfig:
             sys.exit(1)
 
     def get_provider_for_model(self, model: str) -> Optional[Provider]:
-        """Return a random matching non-default provider, else the default."""
+        """
+        Return a provider that explicitly matches the model.
+        
+        Checks non-default providers first (random choice if multiple match),
+        then falls back to the default provider only if it also matches.
+        Returns None if no provider's pattern matches the model.
+        """
         candidates = [
             p for name, p in self.providers.items()
             if name != self.default_provider_name and p.matches_model(model)
         ]
         if candidates:
             return random.choice(candidates)
+        # Only use default provider if it explicitly matches the model
         if self.default_provider_name:
-            return self.providers.get(self.default_provider_name)
+            default = self.providers.get(self.default_provider_name)
+            if default and default.matches_model(model):
+                return default
         return None
 
     def is_model_allowed(self, model: str) -> bool:

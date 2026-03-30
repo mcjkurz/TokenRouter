@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     
     # API documentation
     enable_api_docs: bool = Field(default=False)
+
+    # Logging
+    log_payload_max_bytes: int = Field(default=8192, ge=0)
     
     @property
     def allowed_email_domains_list(self) -> List[str]:
