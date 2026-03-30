@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     
     # Provider settings (now optional - providers.json is the source of truth)
     provider_timeout: float = Field(default=120.0)
-    default_model: str = Field(default="gpt-4o")
+    default_model: str = Field(default="default-model")
     
     # Server settings
     database_url: str = Field(default="sqlite:///./data/tokenrouter.db")
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Registration settings
     registration_enabled: bool = Field(default=True)
     registration_access_codes: str = Field(default="")
-    allowed_email_domains: str = Field(default="ln.hk,ln.edu.hk")
+    allowed_email_domains: str = Field(default="")
     default_registration_quota: int = Field(default=500000)
     public_api_url: str = Field(default="")
     
@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     def is_email_domain_allowed(self, email: str) -> bool:
         """Check if an email domain is allowed."""
         email_lower = email.lower()
+        # Empty allow-list means no domain restriction.
+        if not self.allowed_email_domains_list:
+            return True
         return any(email_lower.endswith(f"@{domain}") for domain in self.allowed_email_domains_list)
     
     @property

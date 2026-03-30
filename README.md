@@ -20,7 +20,7 @@ cp providers.example.json providers.json  # edit with your providers
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `ADMIN_PASSWORD` | Yes | — | Password for the admin panel |
-| `DEFAULT_MODEL` | No | `gpt-5.4` | Default model when none specified |
+| `DEFAULT_MODEL` | No | `default-model` | Default model shown in registration usage examples |
 | `PROVIDER_TIMEOUT` | No | `120.0` | Upstream request timeout (seconds) |
 | `LOG_PAYLOAD_MAX_BYTES` | No | `8192` | Integer max bytes stored per request/response payload (set `0` to disable payload logging) |
 | `USAGE_MISSING_MIN_CHARGE_TOKENS` | No | `200` | Minimum fallback tokens charged when streamed usage is missing |
@@ -30,7 +30,7 @@ cp providers.example.json providers.json  # edit with your providers
 | `ENABLE_API_DOCS` | No | `false` | Enable Swagger docs at `/docs` |
 | `REGISTRATION_ENABLED` | No | `true` | Allow user self-registration |
 | `REGISTRATION_ACCESS_CODES` | No | — | Comma-separated access codes |
-| `ALLOWED_EMAIL_DOMAINS` | No | `ln.hk,ln.edu.hk` | Allowed email domains |
+| `ALLOWED_EMAIL_DOMAINS` | No | empty (allow all) | Comma-separated allowed email domains |
 | `DEFAULT_REGISTRATION_QUOTA` | No | `500000` | Default token quota for new users |
 
 ### `providers.json`
