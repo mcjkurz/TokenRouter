@@ -182,12 +182,12 @@ async def _stream_with_usage_tracking(
 @router.get("/v1/models")
 async def list_models():
     """List available models in OpenAI-compatible format. No auth required."""
-    models = provider_config.get_all_model_names()
+    models_with_providers = provider_config.get_all_models_with_providers()
     return {
         "object": "list",
         "data": [
-            {"id": m, "object": "model", "created": 0, "owned_by": "tokenrouter"}
-            for m in models
+            {"id": m, "object": "model", "created": 0, "owned_by": provider}
+            for m, provider in models_with_providers
         ]
     }
 

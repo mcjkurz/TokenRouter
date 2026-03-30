@@ -8,6 +8,11 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 
 
+def _is_wildcard_pattern(pattern: str) -> bool:
+    """Check if a pattern contains wildcard characters."""
+    return any(c in pattern for c in "*?[")
+
+
 @dataclass
 class Provider:
     name: str
@@ -15,9 +20,25 @@ class Provider:
     api_key: Optional[str]
     models: List[str]
 
-    def matches_model(self, model: str) -> bool:
+    def matches_model_exact(self, model: str) -> bool:
+        """Check for exact (non-wildcard) match."""
         model_lower = model.lower()
-        return any(fnmatch.fnmatch(model_lower, p.lower()) for p in self.models)
+        return any(
+            not _is_wildcard_pattern(p) and model_lower == p.lower()
+            for p in self.models
+        )
+
+    def matches_model_wildcard(self, model: str) -> bool:
+        """Check for wildcard match only."""
+        model_lower = model.lower()
+        return any(
+            _is_wildcard_pattern(p) and fnmatch.fnmatch(model_lower, p.lower())
+            for p in self.models
+        )
+
+    def matches_model(self, model: str) -> bool:
+        """Check if model matches (exact or wildcard)."""
+        return self.matches_model_exact(model) or self.matches_model_wildcard(model)
 
 
 class ProviderConfig:
@@ -70,21 +91,31 @@ class ProviderConfig:
         """
         Return a provider that explicitly matches the model.
         
-        Checks non-default providers first (random choice if multiple match),
-        then falls back to the default provider only if it also matches.
+        Matching priority:
+        1. Exact (non-wildcard) match — first provider found wins
+        2. Wildcard match — non-default providers first, then default
+        
         Returns None if no provider's pattern matches the model.
         """
+        # Pass 1: exact matches have highest priority
+        for p in self.providers.values():
+            if p.matches_model_exact(model):
+                return p
+
+        # Pass 2: wildcard matches — prefer non-default providers
         candidates = [
             p for name, p in self.providers.items()
-            if name != self.default_provider_name and p.matches_model(model)
+            if name != self.default_provider_name and p.matches_model_wildcard(model)
         ]
         if candidates:
             return random.choice(candidates)
-        # Only use default provider if it explicitly matches the model
+
+        # Pass 3: check default provider for wildcard match
         if self.default_provider_name:
             default = self.providers.get(self.default_provider_name)
-            if default and default.matches_model(model):
+            if default and default.matches_model_wildcard(model):
                 return default
+
         return None
 
     def is_model_allowed(self, model: str) -> bool:
@@ -99,6 +130,17 @@ class ProviderConfig:
                     seen.add(m.lower())
                     out.append(m)
         return sorted(out)
+
+    def get_all_models_with_providers(self) -> List[tuple]:
+        """Return list of (model_name, provider_name) tuples, sorted by model name."""
+        seen = set()
+        out = []
+        for p in self.providers.values():
+            for m in p.models:
+                if m.lower() not in seen:
+                    seen.add(m.lower())
+                    out.append((m, p.name))
+        return sorted(out, key=lambda x: x[0].lower())
 
     def resolve_model(self, model: str) -> str:
         """Replace 'default' or 'default-model' with the configured default_model."""
