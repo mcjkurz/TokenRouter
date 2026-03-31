@@ -1,5 +1,5 @@
 {
-  "admin_password": "your-secure-password",
+  "admin_password_env": "ADMIN_PASSWORD",
   "registration": {
     "enabled": true,
     "access_codes": ["code1", "code2"],

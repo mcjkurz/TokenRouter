@@ -17,8 +17,9 @@ cp .env.example .env                # add your API keys
 
 Configuration is split between `config.json` and `.env`:
 
-**`.env`** — API keys (kept out of version control):
+**`.env`** — Secrets (kept out of version control):
 ```bash
+ADMIN_PASSWORD=your_admin_password
 OPENAI_API_KEY=sk-your-openai-key
 DEEPSEEK_API_KEY=sk-your-deepseek-key
 ```
@@ -26,7 +27,7 @@ DEEPSEEK_API_KEY=sk-your-deepseek-key
 **`config.json`** — Everything else:
 ```json
 {
-  "admin_password": "your-secure-password",
+  "admin_password_env": "ADMIN_PASSWORD",
   "registration": {
     "enabled": true,
     "access_codes": ["code1", "code2"],
@@ -58,7 +59,7 @@ DEEPSEEK_API_KEY=sk-your-deepseek-key
 }
 ```
 
-The `api_key_env` field specifies which environment variable contains the API key.
+The `_env` suffix fields (`admin_password_env`, `api_key_env`) specify which environment variables contain the actual values.
 
 ### Pricing
 

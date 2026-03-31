@@ -1,9 +1,14 @@
 """Configuration management - loads from config.json."""
 import json
+import os
 import sys
 from pathlib import Path
 from typing import List, Optional
 from dataclasses import dataclass, field
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 @dataclass
@@ -161,8 +166,13 @@ def _parse_settings(data: dict) -> Settings:
         fallback_max_charge_tokens=price_data.get("fallback_max_charge_tokens", 4000),
     )
     
+    # Resolve admin password from environment variable
+    admin_password = ""
+    if admin_password_env := data.get("admin_password_env"):
+        admin_password = os.getenv(admin_password_env, "")
+    
     settings = Settings(
-        admin_password=data.get("admin_password", ""),
+        admin_password=admin_password,
         registration=registration,
         server=server,
         pricing=pricing,
