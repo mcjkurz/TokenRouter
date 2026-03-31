@@ -1,11 +1,16 @@
 """Provider configuration and model routing from config.json."""
 import fnmatch
+import os
 import random
 import sys
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
+from dotenv import load_dotenv
+
 from app.core.config import get_raw_config
+
+load_dotenv()
 
 
 def _is_wildcard_pattern(pattern: str) -> bool:
@@ -104,10 +109,17 @@ class ProviderConfig:
                         output_per_million=pricing_cfg.get("output_per_million", provider_output),
                     )
             
+            # Resolve API key from environment variable
+            api_key = None
+            if api_key_env := cfg.get("api_key_env"):
+                api_key = os.getenv(api_key_env)
+                if not api_key:
+                    print(f"\n  WARNING: Environment variable '{api_key_env}' not set for provider '{name}'\n")
+            
             self.providers[name] = Provider(
                 name=name,
                 base_url=cfg.get("base_url", ""),
-                api_key=cfg.get("api_key"),
+                api_key=api_key,
                 model_patterns=model_patterns,
                 input_per_million=provider_input,
                 output_per_million=provider_output,

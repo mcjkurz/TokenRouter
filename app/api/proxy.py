@@ -26,52 +26,64 @@ logger = logging.getLogger("uvicorn.error")
 router = APIRouter()
 
 
-class SSEBuffer:
+def _parse_sse_for_usage(raw_data: bytes) -> tuple[Optional[Dict[str, Any]], int, bool]:
     """
-    Buffer for parsing SSE streams that may split JSON across chunk boundaries.
+    Parse collected SSE data post-hoc to extract usage info.
     
-    SSE format: "data: <json>\n\n" but network chunks can split anywhere.
-    This buffer accumulates data and yields complete SSE events.
+    Returns:
+        (usage_data, output_char_count, error_occurred)
     """
+    usage_data: Optional[Dict[str, Any]] = None
+    output_char_count = 0
+    error_occurred = False
     
-    def __init__(self):
-        self._buffer = ""
+    text = raw_data.decode("utf-8", errors="replace").replace("\r\n", "\n")
     
-    def add_chunk(self, chunk: bytes) -> list:
-        """
-        Add a chunk and return list of complete SSE data payloads (parsed JSON or raw).
-        """
-        self._buffer += chunk.decode("utf-8", errors="replace")
-        self._buffer = self._buffer.replace("\r\n", "\n")
-        events = []
+    for block in text.split("\n\n"):
+        if not block.strip():
+            continue
         
-        while "\n\n" in self._buffer:
-            event_end = self._buffer.index("\n\n")
-            event_block = self._buffer[:event_end]
-            self._buffer = self._buffer[event_end + 2:]
-            
-            data_lines = []
-            for raw_line in event_block.split("\n"):
-                line = raw_line.strip()
-                if not line.startswith("data:"):
-                    continue
+        data_lines = []
+        for line in block.split("\n"):
+            line = line.strip()
+            if line.startswith("data:"):
                 data_str = line[5:]
                 if data_str.startswith(" "):
                     data_str = data_str[1:]
                 data_lines.append(data_str)
-
-            if not data_lines:
-                continue
-
-            payload = "\n".join(data_lines)
-            if payload == "[DONE]":
-                continue
-            try:
-                events.append(json.loads(payload))
-            except json.JSONDecodeError:
-                pass
         
-        return events
+        if not data_lines:
+            continue
+        
+        payload = "\n".join(data_lines)
+        if payload == "[DONE]":
+            continue
+        
+        try:
+            event = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        
+        if not isinstance(event, dict):
+            continue
+        
+        if "usage" in event and event["usage"]:
+            usage_data = event["usage"]
+        
+        choices = event.get("choices", [])
+        if choices:
+            delta = choices[0].get("delta", {})
+            content = delta.get("content", "")
+            if isinstance(content, str):
+                output_char_count += len(content)
+                if content.startswith("[Error]"):
+                    error_occurred = True
+        
+        output_text = event.get("output_text")
+        if isinstance(output_text, str):
+            output_char_count += len(output_text)
+    
+    return usage_data, output_char_count, error_occurred
 
 
 async def _stream_with_usage_tracking(
@@ -85,39 +97,24 @@ async def _stream_with_usage_tracking(
     """
     Wrap a streaming response to capture usage from the final chunk.
     
-    Many providers (OpenAI, Anthropic) include usage stats in the last SSE chunk
-    when stream_options.include_usage is set. This wrapper extracts that data
-    and logs it after the stream completes.
+    Yields chunks immediately for minimal latency, then parses the collected
+    data post-hoc after the stream completes to extract usage stats.
     """
-    usage_data: Optional[Dict[str, Any]] = None
-    error_occurred = False
+    collected_chunks: list[bytes] = []
     client_disconnected = False
-    output_char_count = 0
-    sse_buffer = SSEBuffer()
     
     try:
         async for chunk in generator:
-            for event in sse_buffer.add_chunk(chunk):
-                if isinstance(event, dict):
-                    if "usage" in event and event["usage"]:
-                        usage_data = event["usage"]
-                    choices = event.get("choices", [])
-                    if choices:
-                        delta = choices[0].get("delta", {})
-                        content = delta.get("content", "")
-                        if isinstance(content, str):
-                            output_char_count += len(content)
-                        if content.startswith("[Error]"):
-                            error_occurred = True
-                    output_text = event.get("output_text")
-                    if isinstance(output_text, str):
-                        output_char_count += len(output_text)
-            
+            collected_chunks.append(chunk)
             yield chunk
     except (ConnectionError, asyncio.CancelledError):
         client_disconnected = True
         cancel_event.set()
         logger.info(f"[stream] {model} client disconnected — cancelling upstream")
+    
+    # Parse usage post-hoc from collected data
+    raw_data = b"".join(collected_chunks)
+    usage_data, output_char_count, error_occurred = _parse_sse_for_usage(raw_data)
     
     db = SessionLocal()
     try:
