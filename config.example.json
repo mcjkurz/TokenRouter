@@ -22,7 +22,6 @@
   "providers": {
     "ollama": {
       "base_url": "http://localhost:11434/v1",
-      "api_key": null,
       "input_per_million": 0,
       "output_per_million": 0,
       "models": {
@@ -33,7 +32,7 @@
     },
     "openai": {
       "base_url": "https://api.openai.com/v1",
-      "api_key": "sk-your-openai-key",
+      "api_key_env": "OPENAI_API_KEY",
       "input_per_million": 2.50,
       "output_per_million": 10.00,
       "models": {

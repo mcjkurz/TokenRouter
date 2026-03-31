@@ -10,12 +10,20 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 cp config.example.json config.json  # edit with your settings
+cp .env.example .env                # add your API keys
 ```
 
 ## Configuration
 
-All configuration is in `config.json`:
+Configuration is split between `config.json` and `.env`:
 
+**`.env`** — API keys (kept out of version control):
+```bash
+OPENAI_API_KEY=sk-your-openai-key
+DEEPSEEK_API_KEY=sk-your-deepseek-key
+```
+
+**`config.json`** — Everything else:
 ```json
 {
   "admin_password": "your-secure-password",
@@ -38,7 +46,7 @@ All configuration is in `config.json`:
   "providers": {
     "openai": {
       "base_url": "https://api.openai.com/v1",
-      "api_key": "sk-your-key",
+      "api_key_env": "OPENAI_API_KEY",
       "input_per_million": 2.50,
       "output_per_million": 10.00,
       "models": {
@@ -49,6 +57,8 @@ All configuration is in `config.json`:
   }
 }
 ```
+
+The `api_key_env` field specifies which environment variable contains the API key.
 
 ### Pricing
 
